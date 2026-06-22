@@ -6,14 +6,23 @@ on:
     - cron: "30 8 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-xauusd-report
+  cancel-in-progress: false
+
 jobs:
   report:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Generate report
@@ -33,3 +42,4 @@ jobs:
         with:
           name: xauusd-report
           path: output/reports/*.md
+          retention-days: 14

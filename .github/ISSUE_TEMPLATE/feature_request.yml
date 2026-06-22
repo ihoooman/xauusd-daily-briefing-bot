@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operational problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: data_sources
+    attributes:
+      label: Data sources
+      description: If this depends on a data provider, link to official API docs.
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or tradeoffs
+      description: Note reliability, cost, rate limits, or security concerns.

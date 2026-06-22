@@ -1,0 +1,43 @@
+name: Bug report
+description: Report a reproducible problem
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste API keys, Telegram tokens, chat IDs, or private logs.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide the commands or workflow steps that trigger the issue.
+      placeholder: |
+        1. Run ...
+        2. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Paste only redacted logs. Remove tokens, keys, and chat IDs.
+      render: text
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.11"
