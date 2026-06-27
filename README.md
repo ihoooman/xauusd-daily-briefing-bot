@@ -1,6 +1,6 @@
 # XAUUSD Daily Briefing Bot
 
-[![Daily XAUUSD Persian Briefing](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml/badge.svg)](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml)
+[![Manual XAUUSD Persian Briefing](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml/badge.svg)](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -18,7 +18,7 @@ The bot is designed for real daily use. It does not fabricate prices, technical 
 - Calculates trend, support, resistance, RSI, moving averages, MACD, and recent price structure.
 - Produces a Persian Markdown report.
 - Sends a one-message Telegram summary using Telegram Bot API HTML formatting.
-- Runs manually, locally on a schedule, through cron, or through GitHub Actions.
+- Runs manually, through GitHub Actions on demand, or locally with optional scheduler/cron setup.
 
 ## Output Language
 
@@ -163,7 +163,7 @@ The repository includes:
 .github/workflows/daily-report.yml
 ```
 
-The workflow runs daily at 08:30 UTC, which corresponds to 12:00 Tehran time, and can also be triggered manually from the Actions tab.
+The GitHub Actions workflow is manual-only. It does not run on a timer. Trigger it from the Actions tab with **Run workflow** whenever you want a fresh report.
 
 Add these repository secrets:
 

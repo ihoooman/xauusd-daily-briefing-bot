@@ -1,9 +1,6 @@
-name: Daily XAUUSD Persian Briefing
+name: Manual XAUUSD Persian Briefing
 
 on:
-  schedule:
-    # 12:00 Tehran is 08:30 UTC while Iran is UTC+03:30.
-    - cron: "30 8 * * *"
   workflow_dispatch:
 
 permissions:
