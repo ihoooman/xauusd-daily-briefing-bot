@@ -16,17 +16,31 @@ class PriceDataProvider:
 
     def fetch_current_price(self) -> dict[str, Any]:
         errors: list[str] = []
+        primary: dict[str, Any] | None = None
 
         if self.settings.price_api_key:
             try:
-                return self._fetch_twelve_data_quote()
+                primary = self._fetch_twelve_data_quote()
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"Twelve Data: {exc}")
 
         try:
-            return self._fetch_swissquote_spot_price()
+            swissquote = self._fetch_swissquote_spot_price()
+            if primary:
+                primary["validation"] = self._compare_spot_quotes(primary, swissquote)
+                primary["errors"] = errors
+                return primary
+            primary = swissquote
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Swissquote: {exc}")
+
+        if primary:
+            primary["validation"] = {
+                "status": "unavailable",
+                "message": "منبع مستقل دوم برای تطبیق قیمت در دسترس نبود.",
+            }
+            primary["errors"] = errors
+            return primary
 
         try:
             return self._fetch_yahoo_gold_futures_price()
@@ -39,6 +53,26 @@ class PriceDataProvider:
             "fetched_at": None,
             "source": "نامشخص",
             "error": "؛ ".join(errors) or "منبع قیمت در دسترس نیست.",
+        }
+
+    @staticmethod
+    def _compare_spot_quotes(
+        primary: dict[str, Any], secondary: dict[str, Any]
+    ) -> dict[str, Any]:
+        primary_price = float(primary["price"])
+        secondary_price = float(secondary["price"])
+        divergence_pct = abs(primary_price - secondary_price) / primary_price * 100
+        status = "confirmed" if divergence_pct <= 0.35 else "mismatch"
+        return {
+            "status": status,
+            "secondary_source": secondary.get("source"),
+            "secondary_price": secondary_price,
+            "divergence_pct": round(divergence_pct, 3),
+            "message": (
+                "قیمت با منبع مستقل دوم تطبیق داده شد."
+                if status == "confirmed"
+                else "اختلاف قیمت دو منبع بیش از آستانه کنترل کیفیت است."
+            ),
         }
 
     def _fetch_twelve_data_quote(self) -> dict[str, Any]:

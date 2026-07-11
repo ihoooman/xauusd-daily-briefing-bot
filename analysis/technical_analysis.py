@@ -66,6 +66,8 @@ def analyze_timeframe(df: pd.DataFrame | None, payload: dict[str, Any]) -> dict[
         "structure": structure,
         "explanation": explanation,
         "last_close": float(last["close"]),
+        "last_candle_at": working.index[-1].to_pydatetime(),
+        "row_count": len(working),
     }
 
 

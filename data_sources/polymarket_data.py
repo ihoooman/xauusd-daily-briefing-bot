@@ -67,19 +67,22 @@ class PolymarketProvider:
         outcomes = self._jsonish(market.get("outcomes")) or []
         prices = self._jsonish(market.get("outcomePrices")) or []
         probability = "نامشخص"
+        probability_value = None
         if outcomes and prices:
             try:
                 pairs = list(zip(outcomes, prices, strict=False))
                 yes_pair = next((pair for pair in pairs if str(pair[0]).lower() == "yes"), pairs[0])
-                probability = f"{float(yes_pair[1]) * 100:.1f}%"
+                probability_value = float(yes_pair[1])
+                probability = f"{probability_value * 100:.1f}%"
             except Exception:  # noqa: BLE001
                 probability = "نامشخص"
 
-        sentiment = self._sentiment_for_gold(title, probability)
+        sentiment = self._sentiment_for_gold(title, probability_value)
         return {
             "title": title,
             "persian_title": self._persian_market_title(title),
             "probability": probability,
+            "probability_value": probability_value,
             "interpretation": self._interpretation(title, probability),
             "sentiment": sentiment,
             "url": market.get("url") or market.get("slug"),
@@ -97,12 +100,21 @@ class PolymarketProvider:
         return None
 
     @staticmethod
-    def _sentiment_for_gold(title: str, probability: str) -> str:
+    def _sentiment_for_gold(title: str, probability: float | None) -> str:
+        if probability is None or 0.45 <= probability <= 0.55:
+            return "خنثی"
+
         lowered = title.lower()
+        event_likely = probability > 0.55
         if any(term in lowered for term in ["rate cut", "recession", "lower inflation"]):
-            return "صعودی"
+            return "صعودی" if event_likely else "نزولی"
         if any(term in lowered for term in ["rate hike", "higher inflation", "strong dollar"]):
-            return "نزولی"
+            return "نزولی" if event_likely else "صعودی"
+        if "gold" in lowered or "xau" in lowered:
+            if any(term in lowered for term in ["above", "over", "reach", "hit"]):
+                return "صعودی" if event_likely else "نزولی"
+            if any(term in lowered for term in ["below", "under"]):
+                return "نزولی" if event_likely else "صعودی"
         return "خنثی"
 
     @staticmethod
