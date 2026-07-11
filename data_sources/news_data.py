@@ -32,7 +32,6 @@ NEWS_KEYWORDS = [
 
 RSS_FEEDS = [
     ("FXStreet", "https://www.fxstreet.com/rss/news"),
-    ("Kitco", "https://www.kitco.com/rss/news"),
     ("MarketWatch", "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"),
     ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
 ]

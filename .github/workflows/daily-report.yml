@@ -1,6 +1,9 @@
-name: Manual XAUUSD Persian Briefing
+name: Daily XAUUSD Persian Briefing
 
 on:
+  schedule:
+    # 12:00 Asia/Tehran (UTC+03:30)
+    - cron: "30 8 * * *"
   workflow_dispatch:
 
 permissions:

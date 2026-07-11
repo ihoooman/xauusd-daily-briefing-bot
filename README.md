@@ -1,6 +1,6 @@
 # XAUUSD Daily Briefing Bot
 
-[![Manual XAUUSD Persian Briefing](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml/badge.svg)](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml)
+[![Daily XAUUSD Persian Briefing](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml/badge.svg)](https://github.com/ihoooman/xauusd-daily-briefing-bot/actions/workflows/daily-report.yml)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -18,7 +18,9 @@ The bot is designed for real daily use. It does not fabricate prices, technical 
 - Calculates trend, support, resistance, RSI, moving averages, MACD, and recent price structure.
 - Produces a Persian Markdown report.
 - Sends a one-message Telegram summary using Telegram Bot API HTML formatting.
-- Runs manually, through GitHub Actions on demand, or locally with optional scheduler/cron setup.
+- Cross-checks the primary spot quote against an independent XAU/USD source.
+- Scores source freshness, coverage, consistency, and technical-candle recency before assigning confidence.
+- Runs every day at 12:00 Tehran time through GitHub Actions and also supports manual runs.
 
 ## Output Language
 
@@ -67,7 +69,7 @@ xauusd-daily-briefing-bot/
 | --- | --- | --- |
 | XAU/USD price | Twelve Data | Swissquote public XAU/USD quote |
 | Technical candles | Twelve Data XAU/USD | Yahoo Finance `GC=F` as a clearly labeled gold futures proxy |
-| News | NewsAPI + RSS feeds | Section is marked unavailable if sources fail |
+| News | NewsAPI + verified FXStreet, MarketWatch, and CNBC RSS feeds | Section is marked unavailable if sources fail |
 | Economic calendar | Financial Modeling Prep | FRED release dates fallback |
 | Prediction markets | Polymarket Gamma API | Section says no meaningful active market was found |
 | Telegram delivery | Telegram Bot API | Skipped if credentials are missing |
@@ -163,7 +165,7 @@ The repository includes:
 .github/workflows/daily-report.yml
 ```
 
-The GitHub Actions workflow is manual-only. It does not run on a timer. Trigger it from the Actions tab with **Run workflow** whenever you want a fresh report.
+The GitHub Actions workflow runs every day at **12:00 Tehran time** (`08:30 UTC`). You can also trigger it from the Actions tab with **Run workflow** whenever you want an additional fresh report.
 
 Add these repository secrets:
 
@@ -218,6 +220,8 @@ The final verdict combines:
 - Daily, 4H, and 1H technical trend
 - Support and resistance levels
 - RSI, moving averages, MACD, and recent price action
+- Independent spot-price cross-checking
+- Data freshness, source diversity, and completeness scoring
 
 The bot outputs a direction, confidence level, main reason, invalidation level, bullish scenario, bearish scenario, and risk-management note.
 

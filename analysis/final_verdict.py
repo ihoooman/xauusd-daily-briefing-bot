@@ -8,6 +8,8 @@ def build_final_verdict(
     calendar_items: list[dict[str, Any]],
     prediction_items: list[dict[str, Any]],
     technicals: dict[str, dict[str, Any]],
+    price: dict[str, Any] | None = None,
+    data_quality: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     score = 0
     reasons: list[str] = []
@@ -19,18 +21,20 @@ def build_final_verdict(
         score -= 1
         reasons.append("فاندامنتال‌ها متمایل به فشار روی طلا هستند.")
 
+    prediction_score = 0
     for item in prediction_items:
         if item.get("sentiment") == "صعودی":
-            score += 1
+            prediction_score += 1
         elif item.get("sentiment") == "نزولی":
-            score -= 1
+            prediction_score -= 1
+    score += max(-2, min(2, prediction_score))
 
-    for timeframe in ("1d", "4h", "1h"):
+    for timeframe, weight in (("1d", 3), ("4h", 2), ("1h", 1)):
         trend = technicals.get(timeframe, {}).get("trend")
         if trend == "صعودی":
-            score += 1
+            score += weight
         elif trend == "نزولی":
-            score -= 1
+            score -= weight
 
     if calendar_items:
         score = int(score * 0.8)
@@ -39,13 +43,20 @@ def build_final_verdict(
     decision = _two_way_decision(score, fundamentals, technicals)
 
     confidence = "پایین"
-    if abs(score) >= 4:
+    if abs(score) >= 6:
         confidence = "بالا"
-    elif abs(score) >= 2:
+    elif abs(score) >= 3:
         confidence = "متوسط"
 
-    supports = _collect_levels(technicals, "supports")
-    resistances = _collect_levels(technicals, "resistances")
+    quality_score = int((data_quality or {}).get("score", 0))
+    if quality_score < 65:
+        confidence = "پایین"
+    elif quality_score < 90 and confidence == "بالا":
+        confidence = "متوسط"
+
+    current_price = float(price["price"]) if price and price.get("available") else None
+    supports = _collect_levels(technicals, "supports", current_price)
+    resistances = _collect_levels(technicals, "resistances", current_price)
     invalidation = _invalidation_level(decision, supports, resistances)
 
     main_reason = " ".join(reasons) or fundamentals.get(
@@ -68,6 +79,7 @@ def build_final_verdict(
         "bearish_scenario": _bearish_scenario(supports, resistances),
         "risk_management": _risk_management(decision, supports, resistances),
         "score": score,
+        "data_quality_score": quality_score,
     }
 
 
@@ -98,14 +110,35 @@ def _two_way_decision(
     return "LONG / خرید"
 
 
-def _collect_levels(technicals: dict[str, dict[str, Any]], key: str) -> list[float]:
+def _collect_levels(
+    technicals: dict[str, dict[str, Any]], key: str, current_price: float | None = None
+) -> list[float]:
     levels: list[float] = []
     for timeframe in ("1d", "4h", "1h"):
         levels.extend(technicals.get(timeframe, {}).get(key) or [])
     unique = sorted({round(float(level), 2) for level in levels})
+    if current_price is not None:
+        if key == "supports":
+            unique = [level for level in unique if level < current_price]
+        else:
+            unique = [level for level in unique if level > current_price]
+    tolerance = (current_price or (unique[-1] if unique else 0)) * 0.001
+    unique = _cluster_nearby_levels(unique, tolerance)
     if key == "supports":
         return list(reversed(unique))[:5]
     return unique[:5]
+
+
+def _cluster_nearby_levels(levels: list[float], tolerance: float) -> list[float]:
+    if not levels or tolerance <= 0:
+        return levels
+    clusters: list[list[float]] = [[levels[0]]]
+    for level in levels[1:]:
+        if level - clusters[-1][-1] <= tolerance:
+            clusters[-1].append(level)
+        else:
+            clusters.append([level])
+    return [round(sum(cluster) / len(cluster), 2) for cluster in clusters]
 
 
 def _invalidation_level(decision: str, supports: list[float], resistances: list[float]) -> str:

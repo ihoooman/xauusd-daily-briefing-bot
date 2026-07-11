@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from analysis.final_verdict import build_final_verdict
+from analysis.data_quality import assess_data_quality
 from analysis.fundamental_analysis import summarize_fundamentals
 from analysis.technical_analysis import analyze_all_timeframes
 from config import settings
@@ -55,7 +56,17 @@ def generate_daily_report(send_telegram: bool = True) -> Path:
     prediction_items = prediction_payload.get("items", [])
     technicals = analyze_all_timeframes(technical_raw)
     fundamentals = summarize_fundamentals(news_items)
-    verdict = build_final_verdict(fundamentals, calendar_items, prediction_items, technicals)
+    data_quality = assess_data_quality(
+        report_time, price, news_payload, calendar_payload, prediction_payload, technicals
+    )
+    verdict = build_final_verdict(
+        fundamentals,
+        calendar_items,
+        prediction_items,
+        technicals,
+        price=price,
+        data_quality=data_quality,
+    )
 
     markdown = render_report(
         report_time=report_time,
@@ -65,6 +76,7 @@ def generate_daily_report(send_telegram: bool = True) -> Path:
         prediction_payload=prediction_payload,
         technicals=technicals,
         verdict=verdict,
+        data_quality=data_quality,
     )
 
     settings.report_dir.mkdir(parents=True, exist_ok=True)
@@ -82,6 +94,7 @@ def generate_daily_report(send_telegram: bool = True) -> Path:
                 prediction_payload=prediction_payload,
                 technicals=technicals,
                 verdict=verdict,
+                data_quality=data_quality,
             )
             sent = send_telegram_message(settings, telegram_text, parse_mode="HTML")
             if sent:
@@ -102,6 +115,7 @@ def render_report(
     prediction_payload: dict[str, Any],
     technicals: dict[str, dict[str, Any]],
     verdict: dict[str, Any],
+    data_quality: dict[str, Any],
 ) -> str:
     price_text = f"{price['price']:.2f}" if price.get("available") else "در دسترس نیست"
     price_source = price.get("source") or "نامشخص"
@@ -114,6 +128,7 @@ def render_report(
         f"قیمت فعلی: {price_text}",
         f"منبع قیمت: {price_source}",
         f"زمان دریافت قیمت: {price.get('fetched_at') or 'نامشخص'}",
+        f"تطبیق قیمت: {_price_validation_text(price)}",
         "",
         "## ۱. خلاصه سریع بازار",
         "",
@@ -121,6 +136,8 @@ def render_report(
         f"* تصمیم بهتر امروز: {_decision_to_plain_fa(verdict['decision'])}",
         f"* مهم‌ترین عامل اثرگذار: {verdict['main_reason']}",
         f"* ریسک اصلی امروز: {_main_risk(calendar_payload, price)}",
+        f"* امتیاز کیفیت داده: {data_quality['score']} از ۱۰۰ ({data_quality['grade']})",
+        f"* هشدار کیفیت داده: {data_quality['summary']}",
         "",
         "## ۲. تحلیل اخبار فاندامنتال",
         "",
@@ -164,6 +181,7 @@ def render_telegram_report(
     prediction_payload: dict[str, Any],
     technicals: dict[str, dict[str, Any]],
     verdict: dict[str, Any],
+    data_quality: dict[str, Any],
 ) -> str:
     price_text = f"{price['price']:.2f}" if price.get("available") else "در دسترس نیست"
     supports = _format_levels(verdict.get("supports", [])[:3])
@@ -178,10 +196,12 @@ def render_telegram_report(
         f"ساعت: {escape(fa_datetime(report_time))}",
         f"قیمت: <b>{escape(price_text)}</b>",
         f"منبع قیمت: {escape(price.get('source') or 'نامشخص')}",
+        f"تطبیق قیمت: {escape(_price_validation_text(price))}",
         "",
         "<b>خلاصه بازار</b>",
         f"سوگیری: <b>{escape(verdict['decision'])}</b>",
         f"اطمینان: {escape(verdict['confidence'])}",
+        f"کیفیت داده: {escape(str(data_quality['score']))}/100 ({escape(data_quality['grade'])})",
         f"حمایت‌ها: {escape(supports)}",
         f"مقاومت‌ها: {escape(resistances)}",
         f"ابطال: {escape(verdict['invalidation'])}",
@@ -219,6 +239,16 @@ def _telegram_technical_line(label: str, item: dict[str, Any]) -> str:
         f"{escape(label)}: روند {escape(str(trend))} | RSI {escape(str(rsi))} | "
         f"حمایت {escape(supports)} | مقاومت {escape(resistances)}"
     )
+
+
+def _price_validation_text(price: dict[str, Any]) -> str:
+    validation = price.get("validation") or {}
+    if validation.get("status") == "confirmed":
+        return (
+            f"تأیید با {validation.get('secondary_source', 'منبع مستقل')}؛ "
+            f"اختلاف {validation.get('divergence_pct', 'نامشخص')}٪"
+        )
+    return validation.get("message") or "تطبیق مستقل در دسترس نیست."
 
 
 def _telegram_news_lines(items: list[dict[str, Any]]) -> list[str]:
