@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,8 @@ def generate_daily_report(send_telegram: bool = True) -> Path:
                 logger.info("Telegram credentials not provided; skipped sending")
         except Exception as exc:  # noqa: BLE001
             logger.error("Telegram send failed: %s", redact_sensitive(exc))
+    else:
+        logger.info("Telegram delivery disabled for this run")
 
     return report_path
 
@@ -516,6 +519,13 @@ def _main_risk(calendar_payload: dict[str, Any], price: dict[str, Any]) -> str:
     return "تغییر ناگهانی انتظارات نرخ بهره یا بازدهی اوراق آمریکا"
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 if __name__ == "__main__":
-    path = generate_daily_report(send_telegram=True)
+    path = generate_daily_report(send_telegram=_env_flag("SEND_TELEGRAM", True))
     print(path)
