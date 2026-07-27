@@ -58,6 +58,11 @@ def build_final_verdict(
     supports = _collect_levels(technicals, "supports", current_price)
     resistances = _collect_levels(technicals, "resistances", current_price)
     invalidation = _invalidation_level(decision, supports, resistances)
+    trigger_level = _trigger_level(decision, supports, resistances)
+    trigger_met = _trigger_confirmed(decision, trigger_level, technicals)
+    quality_usable = bool((data_quality or {}).get("usable_for_trade", False))
+    trade_status = "ACTIVE / فعال" if trigger_met and quality_usable else "INACTIVE / غیرفعال"
+    level_audit = _audit_levels_against_observed_range(price, supports, resistances)
 
     main_reason = " ".join(reasons) or fundamentals.get(
         "main_reason", "داده کافی برای یک جهت قطعی وجود ندارد."
@@ -70,6 +75,10 @@ def build_final_verdict(
 
     return {
         "decision": decision,
+        "trade_status": trade_status,
+        "trigger_level": trigger_level,
+        "trigger_met": trigger_met,
+        "trigger_evidence": _trigger_evidence(decision, trigger_level, technicals),
         "confidence": confidence,
         "main_reason": main_reason,
         "supports": supports,
@@ -80,6 +89,7 @@ def build_final_verdict(
         "risk_management": _risk_management(decision, supports, resistances),
         "score": score,
         "data_quality_score": quality_score,
+        "level_audit": level_audit,
     }
 
 
@@ -143,15 +153,18 @@ def _cluster_nearby_levels(levels: list[float], tolerance: float) -> list[float]
 
 def _invalidation_level(decision: str, supports: list[float], resistances: list[float]) -> str:
     if decision.startswith("LONG") and supports:
-        return f"تثبیت زیر {supports[0]:.2f}"
+        return f"بسته‌شدن کندل تأییدی زیر سطح تحلیلی {supports[0]:.2f}"
     if decision.startswith("SHORT") and resistances:
-        return f"تثبیت بالای {resistances[0]:.2f}"
+        return f"بسته‌شدن کندل تأییدی بالای سطح تحلیلی {resistances[0]:.2f}"
     return "داده کافی برای تعیین سطح ابطال دقیق در دسترس نیست."
 
 
 def _bullish_scenario(resistances: list[float], supports: list[float]) -> str:
     if resistances:
-        return f"عبور و تثبیت بالای {resistances[0]:.2f} می‌تواند مسیر رشد تا مقاومت‌های بعدی را فعال کند."
+        return (
+            f"فقط بسته‌شدن کندل یک‌ساعته بالای سطح تحلیلی {resistances[0]:.2f} "
+            "می‌تواند مسیر رشد تا مقاومت‌های بعدی را فعال کند؛ لمس سطح کافی نیست."
+        )
     if supports:
         return f"حفظ حمایت {supports[0]:.2f} و تشکیل کف بالاتر می‌تواند سناریوی خرید را معتبر کند."
     return "داده کافی برای سناریوی خرید دقیق در دسترس نیست."
@@ -159,7 +172,10 @@ def _bullish_scenario(resistances: list[float], supports: list[float]) -> str:
 
 def _bearish_scenario(supports: list[float], resistances: list[float]) -> str:
     if supports:
-        return f"شکست و تثبیت زیر {supports[0]:.2f} می‌تواند فشار فروش را تقویت کند."
+        return (
+            f"فقط بسته‌شدن کندل یک‌ساعته زیر سطح تحلیلی {supports[0]:.2f} "
+            "می‌تواند فشار فروش را تأیید کند؛ لمس سطح کافی نیست."
+        )
     if resistances:
         return f"رد قیمت از محدوده {resistances[0]:.2f} می‌تواند سناریوی فروش کوتاه‌مدت بسازد."
     return "داده کافی برای سناریوی فروش دقیق در دسترس نیست."
@@ -171,3 +187,79 @@ def _risk_management(decision: str, supports: list[float], resistances: list[flo
     if decision.startswith("SHORT") and resistances:
         return f"برای فروش، تثبیت بالای {resistances[0]:.2f} نشانه تضعیف سناریو است."
     return "به‌دلیل کمبود سطوح معتبر، حجم معامله باید محافظه‌کارانه باشد."
+
+
+def _trigger_level(
+    decision: str,
+    supports: list[float],
+    resistances: list[float],
+) -> float | None:
+    if decision.startswith("LONG") and resistances:
+        return resistances[0]
+    if decision.startswith("SHORT") and supports:
+        return supports[0]
+    return None
+
+
+def _trigger_confirmed(
+    decision: str,
+    trigger_level: float | None,
+    technicals: dict[str, dict[str, Any]],
+) -> bool:
+    hourly = technicals.get("1h", {})
+    if (
+        trigger_level is None
+        or not hourly.get("available")
+        or not hourly.get("last_candle_closed")
+        or hourly.get("last_close") is None
+    ):
+        return False
+    close = float(hourly["last_close"])
+    if decision.startswith("LONG"):
+        return close > trigger_level
+    if decision.startswith("SHORT"):
+        return close < trigger_level
+    return False
+
+
+def _trigger_evidence(
+    decision: str,
+    trigger_level: float | None,
+    technicals: dict[str, dict[str, Any]],
+) -> str:
+    hourly = technicals.get("1h", {})
+    close = hourly.get("last_close")
+    closed_at = hourly.get("last_candle_at")
+    if trigger_level is None or close is None or not hourly.get("last_candle_closed"):
+        return "کندل بسته‌شده و سطح معتبر کافی برای تأیید شرط وجود ندارد."
+    relation = "بالاتر از" if float(close) > trigger_level else "پایین‌تر یا مساوی"
+    if decision.startswith("SHORT"):
+        relation = "پایین‌تر از" if float(close) < trigger_level else "بالاتر یا مساوی"
+    return (
+        f"آخرین کندل بسته‌شده ۱ساعته در {closed_at} با قیمت {float(close):.2f} "
+        f"{relation} سطح تحلیلی {trigger_level:.2f} بسته شده است."
+    )
+
+
+def _audit_levels_against_observed_range(
+    price: dict[str, Any] | None,
+    supports: list[float],
+    resistances: list[float],
+) -> list[dict[str, Any]]:
+    session_low = (price or {}).get("session_low")
+    session_high = (price or {}).get("session_high")
+    audited: list[dict[str, Any]] = []
+    for kind, levels in (("حمایت", supports), ("مقاومت", resistances)):
+        for level in levels:
+            observed = None
+            if session_low is not None and session_high is not None:
+                observed = float(session_low) <= level <= float(session_high)
+            audited.append(
+                {
+                    "level": level,
+                    "kind": kind,
+                    "origin": "پیوت تاریخی کندل‌های بسته‌شده",
+                    "inside_observed_session_range": observed,
+                }
+            )
+    return audited

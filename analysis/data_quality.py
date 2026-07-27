@@ -14,6 +14,7 @@ def assess_data_quality(
 ) -> dict[str, Any]:
     score = 0
     warnings: list[str] = []
+    blockers: list[str] = []
 
     if price.get("available"):
         score += 35
@@ -22,22 +23,31 @@ def assess_data_quality(
             score += 10
         elif validation.get("status") == "mismatch":
             warnings.append("قیمت دو منبع مستقل هم‌خوانی کافی ندارد.")
+            blockers.append("اختلاف قیمت منابع از آستانه مجاز بیشتر است.")
         else:
             score += 4
             warnings.append("قیمت با منبع مستقل دوم تأیید نشد.")
     else:
         warnings.append("قیمت زنده در دسترس نیست.")
+        blockers.append("قیمت زنده معتبر برای تصمیم معاملاتی وجود ندارد.")
 
     for timeframe, points in (("1d", 10), ("4h", 10), ("1h", 10)):
         item = technicals.get(timeframe, {})
         if not item.get("available"):
             warnings.append(f"داده تکنیکال {timeframe} ناقص است.")
+            blockers.append(f"داده تکنیکال {timeframe} برای تصمیم معاملاتی کافی نیست.")
+            continue
+        if not item.get("last_candle_closed"):
+            blockers.append(f"بسته‌بودن آخرین کندل {timeframe} تأیید نشده است.")
             continue
         if _is_fresh(report_time, item.get("last_candle_at"), timeframe):
             score += points
         else:
             score += points // 2
             warnings.append(f"آخرین کندل {timeframe} قدیمی‌تر از حد انتظار است.")
+        if item.get("consistency_warning"):
+            score = max(score - 8, 0)
+            warnings.append(str(item["consistency_warning"]))
 
     news_items = news_payload.get("items") or []
     fresh_news = [
@@ -63,6 +73,8 @@ def assess_data_quality(
         score += 5
 
     score = min(score, 100)
+    if blockers:
+        score = min(score, 49)
     if score >= 90:
         grade = "بالا"
     elif score >= 65:
@@ -74,9 +86,14 @@ def assess_data_quality(
         "score": score,
         "grade": grade,
         "warnings": warnings,
+        "blockers": blockers,
+        "usable_for_trade": not blockers,
         "summary": (
-            "؛ ".join(item.rstrip(".؟!") for item in warnings[:3]) + "."
-            if warnings
+            "؛ ".join(
+                item.rstrip(".؟!") for item in (blockers + warnings)[:3]
+            )
+            + "."
+            if blockers or warnings
             else "منابع اصلی تازه و سازگار هستند."
         ),
     }

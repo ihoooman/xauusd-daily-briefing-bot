@@ -92,11 +92,18 @@ class PriceDataProvider:
             raise RuntimeError("قیمت در پاسخ API وجود ندارد.")
 
         fetched_at = payload.get("datetime")
+        session_open = _optional_float(payload.get("open"))
+        session_high = _optional_float(payload.get("high"))
+        session_low = _optional_float(payload.get("low"))
         return {
             "available": True,
             "price": float(price),
             "fetched_at": fetched_at or "زمان اعلام‌شده توسط منبع موجود نیست",
             "source": "Twelve Data",
+            "session_open": session_open,
+            "session_high": session_high,
+            "session_low": session_low,
+            "range_source": "Twelve Data quote",
             "raw": payload,
         }
 
@@ -165,3 +172,12 @@ class PriceDataProvider:
             "source": "Yahoo Finance - GC=F COMEX gold futures proxy",
             "raw": {"timestamp": last_timestamp},
         }
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
