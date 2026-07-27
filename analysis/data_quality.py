@@ -48,6 +48,19 @@ def assess_data_quality(
         if item.get("consistency_warning"):
             score = max(score - 8, 0)
             warnings.append(str(item["consistency_warning"]))
+            blockers.append(
+                f"تناقض روند و ساختار در تایم‌فریم {timeframe} وجود دارد."
+            )
+
+    directional_trends = {
+        item.get("trend")
+        for item in technicals.values()
+        if item.get("trend") in {"صعودی", "نزولی"}
+    }
+    if len(directional_trends) > 1:
+        score = max(score - 10, 0)
+        warnings.append("روند تایم‌فریم‌های اصلی هم‌جهت نیست.")
+        blockers.append("تناقض روند بین تایم‌فریم‌های اصلی وجود دارد.")
 
     news_items = news_payload.get("items") or []
     fresh_news = [
@@ -88,6 +101,7 @@ def assess_data_quality(
         "warnings": warnings,
         "blockers": blockers,
         "usable_for_trade": not blockers,
+        "confidence_cap": "پایین" if blockers else None,
         "summary": (
             "؛ ".join(
                 item.rstrip(".؟!") for item in (blockers + warnings)[:3]

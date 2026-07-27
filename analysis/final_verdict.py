@@ -53,16 +53,28 @@ def build_final_verdict(
         confidence = "پایین"
     elif quality_score < 90 and confidence == "بالا":
         confidence = "متوسط"
+    if (data_quality or {}).get("confidence_cap") == "پایین":
+        confidence = "پایین"
 
     current_price = float(price["price"]) if price and price.get("available") else None
-    supports = _collect_levels(technicals, "supports", current_price)
-    resistances = _collect_levels(technicals, "resistances", current_price)
+    support_details = _collect_level_details(technicals, "supports", current_price)
+    resistance_details = _collect_level_details(technicals, "resistances", current_price)
+    supports = [float(item["level"]) for item in support_details]
+    resistances = [float(item["level"]) for item in resistance_details]
     invalidation = _invalidation_level(decision, supports, resistances)
     trigger_level = _trigger_level(decision, supports, resistances)
+    trigger_detail = _trigger_detail(decision, support_details, resistance_details)
     trigger_met = _trigger_confirmed(decision, trigger_level, technicals)
     quality_usable = bool((data_quality or {}).get("usable_for_trade", False))
     trade_status = "ACTIVE / فعال" if trigger_met and quality_usable else "INACTIVE / غیرفعال"
-    level_audit = _audit_levels_against_observed_range(price, supports, resistances)
+    action_now = (
+        f"ورود مطابق سوگیری {decision}"
+        if trade_status.startswith("ACTIVE")
+        else "عدم ورود"
+    )
+    level_audit = _audit_levels_against_observed_range(
+        price, support_details, resistance_details
+    )
 
     main_reason = " ".join(reasons) or fundamentals.get(
         "main_reason", "داده کافی برای یک جهت قطعی وجود ندارد."
@@ -72,17 +84,27 @@ def build_final_verdict(
             f"{main_reason} بازار قطعیت بالایی ندارد، اما خروجی طبق تنظیم دوگزینه‌ای "
             "فقط بین خرید و فروش انتخاب شده است."
         )
+    blockers = list((data_quality or {}).get("blockers") or [])
+    if blockers:
+        main_reason = f"{main_reason} مانع فعال‌سازی: {'؛ '.join(blockers[:2])}"
 
     return {
+        "bias": decision,
         "decision": decision,
         "trade_status": trade_status,
+        "action_now": action_now,
         "trigger_level": trigger_level,
+        "trigger_detail": trigger_detail,
         "trigger_met": trigger_met,
-        "trigger_evidence": _trigger_evidence(decision, trigger_level, technicals),
+        "trigger_evidence": _trigger_evidence(
+            decision, trigger_level, trigger_detail, technicals
+        ),
         "confidence": confidence,
         "main_reason": main_reason,
         "supports": supports,
         "resistances": resistances,
+        "support_details": support_details,
+        "resistance_details": resistance_details,
         "invalidation": invalidation,
         "bullish_scenario": _bullish_scenario(resistances, supports),
         "bearish_scenario": _bearish_scenario(supports, resistances),
@@ -123,20 +145,87 @@ def _two_way_decision(
 def _collect_levels(
     technicals: dict[str, dict[str, Any]], key: str, current_price: float | None = None
 ) -> list[float]:
-    levels: list[float] = []
+    return [
+        float(item["level"])
+        for item in _collect_level_details(technicals, key, current_price)
+    ]
+
+
+def _collect_level_details(
+    technicals: dict[str, dict[str, Any]],
+    key: str,
+    current_price: float | None = None,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    details_key = "support_details" if key == "supports" else "resistance_details"
     for timeframe in ("1d", "4h", "1h"):
-        levels.extend(technicals.get(timeframe, {}).get(key) or [])
-    unique = sorted({round(float(level), 2) for level in levels})
+        item = technicals.get(timeframe, {})
+        details = item.get(details_key) or []
+        if details:
+            for detail in details:
+                normalized = dict(detail)
+                normalized["value"] = round(float(detail["value"]), 2)
+                normalized.setdefault("timeframe", timeframe)
+                candidates.append(normalized)
+            continue
+        for level in item.get(key) or []:
+            candidates.append(
+                {
+                    "value": round(float(level), 2),
+                    "timeframe": timeframe,
+                    "origin": "historical_pivot",
+                    "origin_fa": "پیوت تاریخی؛ کندل منشأ در داده ورودی ثبت نشده است",
+                }
+            )
+
+    candidates.sort(key=lambda item: float(item["value"]))
     if current_price is not None:
         if key == "supports":
-            unique = [level for level in unique if level < current_price]
+            candidates = [
+                item for item in candidates if float(item["value"]) < current_price
+            ]
         else:
-            unique = [level for level in unique if level > current_price]
-    tolerance = (current_price or (unique[-1] if unique else 0)) * 0.001
-    unique = _cluster_nearby_levels(unique, tolerance)
+            candidates = [
+                item for item in candidates if float(item["value"]) > current_price
+            ]
+
+    reference = current_price or (
+        float(candidates[-1]["value"]) if candidates else 0
+    )
+    tolerance = reference * 0.001
+    clusters = _cluster_level_details(candidates, tolerance)
+    output = [
+        {
+            "level": round(
+                sum(float(item["value"]) for item in cluster) / len(cluster), 2
+            ),
+            "kind": "حمایت" if key == "supports" else "مقاومت",
+            "origin": "historical_pivot",
+            "origin_fa": "خوشه پیوت‌های تاریخی از OHLC کندل‌های بسته‌شده",
+            "contributors": cluster,
+        }
+        for cluster in clusters
+    ]
     if key == "supports":
-        return list(reversed(unique))[:5]
-    return unique[:5]
+        return list(reversed(output))[:5]
+    return output[:5]
+
+
+def _cluster_level_details(
+    candidates: list[dict[str, Any]],
+    tolerance: float,
+) -> list[list[dict[str, Any]]]:
+    if not candidates:
+        return []
+    if tolerance <= 0:
+        return [[item] for item in candidates]
+    clusters: list[list[dict[str, Any]]] = [[candidates[0]]]
+    for item in candidates[1:]:
+        if float(item["value"]) - float(clusters[-1][-1]["value"]) <= tolerance:
+            clusters[-1].append(item)
+        else:
+            clusters.append([item])
+    return clusters
 
 
 def _cluster_nearby_levels(levels: list[float], tolerance: float) -> list[float]:
@@ -183,9 +272,15 @@ def _bearish_scenario(supports: list[float], resistances: list[float]) -> str:
 
 def _risk_management(decision: str, supports: list[float], resistances: list[float]) -> str:
     if decision.startswith("LONG") and supports:
-        return f"برای خرید، تثبیت زیر {supports[0]:.2f} نشانه تضعیف سناریو است."
+        return (
+            f"برای خرید، فقط Close کندل بسته‌شده ۱ساعته زیر {supports[0]:.2f} "
+            "نشانه تضعیف سناریو است."
+        )
     if decision.startswith("SHORT") and resistances:
-        return f"برای فروش، تثبیت بالای {resistances[0]:.2f} نشانه تضعیف سناریو است."
+        return (
+            f"برای فروش، فقط Close کندل بسته‌شده ۱ساعته بالای {resistances[0]:.2f} "
+            "نشانه تضعیف سناریو است."
+        )
     return "به‌دلیل کمبود سطوح معتبر، حجم معامله باید محافظه‌کارانه باشد."
 
 
@@ -225,32 +320,73 @@ def _trigger_confirmed(
 def _trigger_evidence(
     decision: str,
     trigger_level: float | None,
+    trigger_detail: dict[str, Any] | None,
     technicals: dict[str, dict[str, Any]],
 ) -> str:
     hourly = technicals.get("1h", {})
-    close = hourly.get("last_close")
-    closed_at = hourly.get("last_candle_at")
+    candle = hourly.get("last_closed_candle") or {}
+    close = candle.get("close", hourly.get("last_close"))
+    closed_at = candle.get(
+        "close_at",
+        hourly.get("last_candle_close_at", hourly.get("last_candle_at")),
+    )
     if trigger_level is None or close is None or not hourly.get("last_candle_closed"):
         return "کندل بسته‌شده و سطح معتبر کافی برای تأیید شرط وجود ندارد."
     relation = "بالاتر از" if float(close) > trigger_level else "پایین‌تر یا مساوی"
     if decision.startswith("SHORT"):
         relation = "پایین‌تر از" if float(close) < trigger_level else "بالاتر یا مساوی"
+    ohlc = ""
+    if all(candle.get(field) is not None for field in ("open", "high", "low", "close")):
+        ohlc = (
+            f"؛ OHLC={float(candle['open']):.2f}/"
+            f"{float(candle['high']):.2f}/{float(candle['low']):.2f}/"
+            f"{float(candle['close']):.2f}"
+        )
+    origin = _trigger_origin_text(trigger_detail)
     return (
-        f"آخرین کندل بسته‌شده ۱ساعته در {closed_at} با قیمت {float(close):.2f} "
-        f"{relation} سطح تحلیلی {trigger_level:.2f} بسته شده است."
+        f"Close آخرین کندل کاملاً بسته‌شده ۱ساعته در {closed_at} برابر "
+        f"{float(close):.2f} است{ohlc} و {relation} Trigger {trigger_level:.2f} "
+        f"قرار دارد. منشأ Trigger: {origin}."
     )
+
+
+def _trigger_detail(
+    decision: str,
+    support_details: list[dict[str, Any]],
+    resistance_details: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if decision.startswith("LONG") and resistance_details:
+        return resistance_details[0]
+    if decision.startswith("SHORT") and support_details:
+        return support_details[0]
+    return None
+
+
+def _trigger_origin_text(detail: dict[str, Any] | None) -> str:
+    if not detail:
+        return "نامشخص"
+    contributors = detail.get("contributors") or []
+    if not contributors:
+        return str(detail.get("origin_fa") or detail.get("origin") or "نامشخص")
+    parts = []
+    for item in contributors:
+        timeframe = item.get("timeframe", "نامشخص")
+        close_at = item.get("pivot_candle_close_at", "زمان نامشخص")
+        parts.append(f"پیوت {timeframe} از کندل بسته‌شده در {close_at}")
+    return "؛ ".join(parts)
 
 
 def _audit_levels_against_observed_range(
     price: dict[str, Any] | None,
-    supports: list[float],
-    resistances: list[float],
+    supports: list[dict[str, Any]],
+    resistances: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     session_low = (price or {}).get("session_low")
     session_high = (price or {}).get("session_high")
     audited: list[dict[str, Any]] = []
-    for kind, levels in (("حمایت", supports), ("مقاومت", resistances)):
-        for level in levels:
+    for kind, details in (("حمایت", supports), ("مقاومت", resistances)):
+        for detail in details:
+            level = float(detail["level"])
             observed = None
             if session_low is not None and session_high is not None:
                 observed = float(session_low) <= level <= float(session_high)
@@ -258,7 +394,9 @@ def _audit_levels_against_observed_range(
                 {
                     "level": level,
                     "kind": kind,
-                    "origin": "پیوت تاریخی کندل‌های بسته‌شده",
+                    "origin": detail.get("origin"),
+                    "origin_fa": detail.get("origin_fa"),
+                    "contributors": detail.get("contributors") or [],
                     "inside_observed_session_range": observed,
                 }
             )
