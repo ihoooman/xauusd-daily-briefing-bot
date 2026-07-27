@@ -24,6 +24,17 @@ class PolymarketSentimentTests(unittest.TestCase):
             "خنثی",
         )
 
+    def test_high_probability_of_no_rate_cuts_is_bearish(self) -> None:
+        title = "Will no Fed rate cuts happen in 2026?"
+        self.assertEqual(
+            PolymarketProvider._sentiment_for_gold(title, 0.85),
+            "نزولی",
+        )
+        self.assertIn(
+            "عدم کاهش نرخ بهره",
+            PolymarketProvider._interpretation(title, "85.0%"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

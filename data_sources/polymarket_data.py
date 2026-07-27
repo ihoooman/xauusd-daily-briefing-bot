@@ -106,6 +106,11 @@ class PolymarketProvider:
 
         lowered = title.lower()
         event_likely = probability > 0.55
+        if any(
+            term in lowered
+            for term in ["no fed rate cuts", "no rate cuts", "zero rate cuts"]
+        ):
+            return "نزولی" if event_likely else "صعودی"
         if any(term in lowered for term in ["rate cut", "recession", "lower inflation"]):
             return "صعودی" if event_likely else "نزولی"
         if any(term in lowered for term in ["rate hike", "higher inflation", "strong dollar"]):
@@ -120,6 +125,14 @@ class PolymarketProvider:
     @staticmethod
     def _interpretation(title: str, probability: str) -> str:
         lowered = title.lower()
+        if any(
+            term in lowered
+            for term in ["no fed rate cuts", "no rate cuts", "zero rate cuts"]
+        ):
+            return (
+                f"بازار احتمال {probability} را برای عدم کاهش نرخ بهره نشان می‌دهد؛ "
+                "احتمال بالاتر این سناریو معمولاً برای طلا فشارآور است."
+            )
         if "rate cut" in lowered:
             return f"بازار احتمال {probability} را برای سناریوی کاهش نرخ بهره نشان می‌دهد؛ این موضوع معمولاً برای طلا حمایتی است."
         if "inflation" in lowered or "cpi" in lowered:
