@@ -129,11 +129,15 @@ def render_report(
         f"منبع قیمت: {price_source}",
         f"زمان دریافت قیمت: {price.get('fetched_at') or 'نامشخص'}",
         f"تطبیق قیمت: {_price_validation_text(price)}",
+        f"دامنه مشاهده‌شده جلسه: {_session_range_text(price)}",
         "",
         "## ۱. خلاصه سریع بازار",
         "",
         f"* سوگیری کلی: {verdict['decision']}",
-        f"* تصمیم بهتر امروز: {_decision_to_plain_fa(verdict['decision'])}",
+        f"* وضعیت معامله: {verdict['trade_status']}",
+        f"* تصمیم بهتر امروز: {_decision_to_plain_fa(verdict)}",
+        f"* تأیید شرط: {'بله' if verdict['trigger_met'] else 'خیر'}",
+        f"* شاهد شرط: {verdict['trigger_evidence']}",
         f"* مهم‌ترین عامل اثرگذار: {verdict['main_reason']}",
         f"* ریسک اصلی امروز: {_main_risk(calendar_payload, price)}",
         f"* امتیاز کیفیت داده: {data_quality['score']} از ۱۰۰ ({data_quality['grade']})",
@@ -155,14 +159,16 @@ def render_report(
             "## ۶. جمع‌بندی نهایی و سناریو معاملاتی",
             "",
             f"* تصمیم نهایی: {verdict['decision']}",
+            f"* وضعیت معامله: {verdict['trade_status']}",
             f"* میزان اطمینان: {verdict['confidence']}",
             f"* دلیل اصلی: {verdict['main_reason']}",
             f"* سناریوی خرید: {verdict['bullish_scenario']}",
             f"* سناریوی فروش: {verdict['bearish_scenario']}",
             f"* مدیریت ریسک: {verdict['risk_management']}",
             f"* سطح ابطال تحلیل: {verdict['invalidation']}",
-            f"* حمایت‌های کلیدی: {_format_levels(verdict['supports'])}",
-            f"* مقاومت‌های کلیدی: {_format_levels(verdict['resistances'])}",
+            f"* حمایت‌های تحلیلی مشتق‌شده: {_format_levels(verdict['supports'])}",
+            f"* مقاومت‌های تحلیلی مشتق‌شده: {_format_levels(verdict['resistances'])}",
+            f"* ممیزی سطوح با دامنه واقعی جلسه: {_level_audit_text(verdict)}",
             "",
             "## ۷. نکته ریسک",
             "",
@@ -197,9 +203,13 @@ def render_telegram_report(
         f"قیمت: <b>{escape(price_text)}</b>",
         f"منبع قیمت: {escape(price.get('source') or 'نامشخص')}",
         f"تطبیق قیمت: {escape(_price_validation_text(price))}",
+        f"دامنه مشاهده‌شده: {escape(_session_range_text(price))}",
         "",
         "<b>خلاصه بازار</b>",
         f"سوگیری: <b>{escape(verdict['decision'])}</b>",
+        f"وضعیت معامله: <b>{escape(verdict['trade_status'])}</b>",
+        f"تأیید شرط: {'بله' if verdict['trigger_met'] else 'خیر'}",
+        f"شاهد شرط: {escape(verdict['trigger_evidence'])}",
         f"اطمینان: {escape(verdict['confidence'])}",
         f"کیفیت داده: {escape(str(data_quality['score']))}/100 ({escape(data_quality['grade'])})",
         f"حمایت‌ها: {escape(supports)}",
@@ -373,6 +383,9 @@ def _render_technicals(technicals: dict[str, dict[str, Any]]) -> list[str]:
                 f"* روند: {item.get('trend', 'داده کافی برای تعیین دقیق این بخش در دسترس نیست.')}",
                 f"* حمایت‌ها: {_format_levels(item.get('supports', []))}",
                 f"* مقاومت‌ها: {_format_levels(item.get('resistances', []))}",
+                f"* منشأ سطوح: {item.get('level_origin', 'نامشخص')}",
+                f"* آخرین کندل بسته‌شده: {item.get('last_candle_at', 'نامشخص')} | "
+                f"Close: {item.get('last_close', 'نامشخص')}",
                 f"* RSI: {item.get('rsi', 'نامشخص')}",
                 f"* میانگین‌های متحرک: {item.get('moving_averages', 'نامشخص')}",
                 f"* توضیح: {item.get('explanation', 'داده کافی برای تعیین دقیق این بخش در دسترس نیست.')}",
@@ -388,12 +401,45 @@ def _format_levels(levels: list[float]) -> str:
     return "، ".join(f"{level:.2f}" for level in levels)
 
 
-def _decision_to_plain_fa(decision: str) -> str:
+def _decision_to_plain_fa(verdict: dict[str, Any]) -> str:
+    if not verdict.get("trigger_met"):
+        return "عدم ورود؛ شرط با کندل بسته‌شده تأیید نشده است"
+    decision = str(verdict.get("decision", ""))
     if decision.startswith("LONG"):
-        return "خرید فقط پس از تأیید شکست یا برگشت معتبر"
+        return "خرید پس از تأیید کندل بسته‌شده"
     if decision.startswith("SHORT"):
-        return "فروش فقط پس از تأیید شکست حمایت یا رد مقاومت"
+        return "فروش پس از تأیید کندل بسته‌شده"
     return "خرید یا فروش طبق سوگیری غالب بازار"
+
+
+def _session_range_text(price: dict[str, Any]) -> str:
+    low = price.get("session_low")
+    high = price.get("session_high")
+    if low is None or high is None:
+        return "دامنه واقعی جلسه از منبع قیمت دریافت نشد"
+    return (
+        f"{float(low):.2f} تا {float(high):.2f} "
+        f"(منبع: {price.get('range_source', price.get('source', 'نامشخص'))})"
+    )
+
+
+def _level_audit_text(verdict: dict[str, Any]) -> str:
+    audited = verdict.get("level_audit") or []
+    if not audited:
+        return "دامنه جلسه یا سطوح قابل ممیزی در دسترس نیست."
+    parts = []
+    for item in audited[:6]:
+        observed = item.get("inside_observed_session_range")
+        if observed is True:
+            status = "داخل دامنه مشاهده‌شده"
+        elif observed is False:
+            status = "خارج از دامنه مشاهده‌شده و لمس آن تأیید نشده"
+        else:
+            status = "وضعیت لمس نامشخص"
+        parts.append(
+            f"{float(item['level']):.2f} ({item['kind']} مشتق‌شده؛ {status})"
+        )
+    return "؛ ".join(parts)
 
 
 def _main_risk(calendar_payload: dict[str, Any], price: dict[str, Any]) -> str:

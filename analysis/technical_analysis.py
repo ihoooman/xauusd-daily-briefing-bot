@@ -44,6 +44,7 @@ def analyze_timeframe(df: pd.DataFrame | None, payload: dict[str, Any]) -> dict[
     trend = _trend_label(last, working)
     supports, resistances = _support_resistance(working)
     structure = _price_structure(working)
+    consistency_warning = _trend_structure_warning(trend, structure)
 
     ma_text = _moving_average_text(last)
     macd_text = _macd_text(last)
@@ -52,8 +53,12 @@ def analyze_timeframe(df: pd.DataFrame | None, payload: dict[str, Any]) -> dict[
     explanation = (
         f"ساختار قیمت: {structure}. MACD: {macd_text}. "
         f"آخرین بسته‌شدن: {last['close']:.2f}. "
+        "حمایت و مقاومت‌ها از پیوت کندل‌های بسته‌شده استخراج شده‌اند و "
+        "به‌معنای لمس‌شدن آن‌ها در جلسه جاری نیستند. "
         f"منبع داده: {payload.get('source', 'نامشخص')}."
     )
+    if consistency_warning:
+        explanation += f" هشدار سازگاری: {consistency_warning}"
 
     return {
         "available": True,
@@ -67,6 +72,12 @@ def analyze_timeframe(df: pd.DataFrame | None, payload: dict[str, Any]) -> dict[
         "explanation": explanation,
         "last_close": float(last["close"]),
         "last_candle_at": working.index[-1].to_pydatetime(),
+        "last_candle_closed": bool(payload.get("confirmed_candles_only")),
+        "source_timezone": payload.get("source_timezone", "نامشخص"),
+        "level_origin": "پیوت تاییدشده از کندل‌های بسته‌شده تاریخی",
+        "consistency_warning": consistency_warning,
+        "analysis_window_low": float(working["low"].tail(120).min()),
+        "analysis_window_high": float(working["high"].tail(120).max()),
         "row_count": len(working),
     }
 
@@ -157,3 +168,11 @@ def _macd_text(last: pd.Series) -> str:
     if macd < signal:
         return "منفی"
     return "خنثی"
+
+
+def _trend_structure_warning(trend: str, structure: str) -> str | None:
+    if trend == "صعودی" and structure == "سقف‌ها و کف‌های پایین‌تر":
+        return "برچسب روند صعودی با ساختار سقف‌ها و کف‌های پایین‌تر متناقض است."
+    if trend == "نزولی" and structure == "سقف‌ها و کف‌های بالاتر":
+        return "برچسب روند نزولی با ساختار سقف‌ها و کف‌های بالاتر متناقض است."
+    return None

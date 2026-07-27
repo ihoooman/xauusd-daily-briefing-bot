@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
@@ -19,16 +20,22 @@ class TechnicalDataProvider:
         output: dict[str, dict[str, Any]] = {}
         for timeframe in ("1d", "4h", "1h"):
             try:
+                data = self.fetch_ohlc(timeframe)
                 output[timeframe] = {
                     "available": True,
-                    "data": self.fetch_ohlc(timeframe),
+                    "data": data,
                     "source": self._source_label(),
+                    "timeframe": timeframe,
+                    "confirmed_candles_only": True,
+                    "source_timezone": data.attrs.get("source_timezone", "UTC"),
                 }
             except Exception as exc:  # noqa: BLE001
                 output[timeframe] = {
                     "available": False,
                     "data": pd.DataFrame(),
                     "source": self._source_label(),
+                    "timeframe": timeframe,
+                    "confirmed_candles_only": False,
                     "error": str(exc),
                 }
         return output
@@ -45,10 +52,15 @@ class TechnicalDataProvider:
             if timeframe == "1h":
                 return self._fetch_twelve_time_series(interval="1h")
             if timeframe == "4h":
-                hourly = self._fetch_twelve_time_series(interval="1h")
-                if hourly.empty:
-                    raise RuntimeError("داده یک‌ساعته برای ساخت تایم‌فریم ۴ ساعته موجود نیست.")
-                return self._resample_4h(hourly)
+                try:
+                    return self._fetch_twelve_time_series(interval="4h")
+                except Exception:
+                    hourly = self._fetch_twelve_time_series(interval="1h")
+                    if hourly.empty:
+                        raise RuntimeError(
+                            "داده یک‌ساعته برای ساخت تایم‌فریم ۴ ساعته موجود نیست."
+                        )
+                    return self._resample_4h(hourly)
 
         if timeframe == "1d":
             return self._fetch_yahoo_chart(range_value="1y", interval="1d")
@@ -96,9 +108,12 @@ class TechnicalDataProvider:
         if df.empty:
             raise RuntimeError("پس از پاک‌سازی، داده OHLC کافی باقی نماند.")
         df = df.set_index("datetime").sort_index()
-        return df.astype(
+        df = df.astype(
             {"open": "float64", "high": "float64", "low": "float64", "close": "float64"}
         )
+        df = self._drop_incomplete_bars(df, interval)
+        df.attrs["source_timezone"] = "UTC"
+        return df
 
     def _fetch_twelve_time_series(self, interval: str) -> pd.DataFrame:
         url = "https://api.twelvedata.com/time_series"
@@ -108,6 +123,7 @@ class TechnicalDataProvider:
                 "symbol": "XAU/USD",
                 "interval": interval,
                 "outputsize": 500,
+                "timezone": "UTC",
                 "apikey": self.settings.price_api_key,
             },
             timeout=self.settings.http_timeout,
@@ -123,9 +139,7 @@ class TechnicalDataProvider:
 
         rows = []
         for item in values:
-            timestamp = pd.to_datetime(item["datetime"])
-            if timestamp.tzinfo is None:
-                timestamp = timestamp.tz_localize(self.settings.timezone)
+            timestamp = pd.to_datetime(item["datetime"], utc=True)
             rows.append(
                 {
                     "datetime": timestamp,
@@ -136,12 +150,22 @@ class TechnicalDataProvider:
                     "volume": float(item.get("volume") or 0),
                 }
             )
-        return pd.DataFrame(rows).set_index("datetime").sort_index()
+        df = pd.DataFrame(rows).set_index("datetime").sort_index()
+        df = self._drop_incomplete_bars(df, interval)
+        meta = payload.get("meta") or {}
+        df.attrs["source_timezone"] = meta.get("exchange_timezone") or "UTC"
+        return df
 
     @staticmethod
     def _resample_4h(hourly: pd.DataFrame) -> pd.DataFrame:
-        return (
-            hourly.resample("4h")
+        utc_hourly = hourly.copy()
+        if utc_hourly.index.tz is None:
+            utc_hourly.index = utc_hourly.index.tz_localize("UTC")
+        else:
+            utc_hourly.index = utc_hourly.index.tz_convert("UTC")
+
+        aggregated = (
+            utc_hourly.resample("4h", origin="epoch", label="left", closed="left")
             .agg(
                 {
                     "open": "first",
@@ -153,3 +177,44 @@ class TechnicalDataProvider:
             )
             .dropna(subset=["open", "high", "low", "close"])
         )
+        counts = utc_hourly["close"].resample(
+            "4h", origin="epoch", label="left", closed="left"
+        ).count()
+        aggregated = aggregated.loc[counts[counts >= 4].index]
+        aggregated = TechnicalDataProvider._drop_incomplete_bars(aggregated, "4h")
+        aggregated.attrs["source_timezone"] = "UTC"
+        return aggregated
+
+    @staticmethod
+    def _drop_incomplete_bars(
+        df: pd.DataFrame,
+        interval: str,
+        now_utc: datetime | None = None,
+    ) -> pd.DataFrame:
+        if df.empty:
+            return df
+
+        duration = {
+            "1h": timedelta(hours=1),
+            "4h": timedelta(hours=4),
+            "1day": timedelta(days=1),
+            "1d": timedelta(days=1),
+        }.get(interval)
+        if duration is None:
+            raise ValueError(f"فاصله زمانی ناشناخته است: {interval}")
+
+        now = now_utc or datetime.now(timezone.utc)
+        index = df.index
+        if index.tz is None:
+            index_utc = index.tz_localize("UTC")
+        else:
+            index_utc = index.tz_convert("UTC")
+
+        closed_mask = index_utc + duration <= pd.Timestamp(now)
+        confirmed = df.loc[closed_mask].copy()
+        if confirmed.empty:
+            raise RuntimeError("هیچ کندل کاملاً بسته‌شده‌ای در پاسخ منبع وجود ندارد.")
+        confirmed.attrs.update(df.attrs)
+        confirmed.attrs["confirmed_candles_only"] = True
+        confirmed.attrs["interval"] = interval
+        return confirmed
