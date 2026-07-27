@@ -130,12 +130,14 @@ def render_report(
         f"زمان دریافت قیمت: {price.get('fetched_at') or 'نامشخص'}",
         f"تطبیق قیمت: {_price_validation_text(price)}",
         f"دامنه مشاهده‌شده جلسه: {_session_range_text(price)}",
+        f"آخرین کندل کاملاً بسته‌شده ۱H: {_closed_candle_text(technicals.get('1h', {}))}",
+        f"آخرین کندل کاملاً بسته‌شده ۴H: {_closed_candle_text(technicals.get('4h', {}))}",
         "",
         "## ۱. خلاصه سریع بازار",
         "",
-        f"* سوگیری کلی: {verdict['decision']}",
+        f"* سوگیری کلی (Bias): {verdict['bias']}",
         f"* وضعیت معامله: {verdict['trade_status']}",
-        f"* تصمیم بهتر امروز: {_decision_to_plain_fa(verdict)}",
+        f"* اقدام فعلی (Action now): {verdict['action_now']}",
         f"* تأیید شرط: {'بله' if verdict['trigger_met'] else 'خیر'}",
         f"* شاهد شرط: {verdict['trigger_evidence']}",
         f"* مهم‌ترین عامل اثرگذار: {verdict['main_reason']}",
@@ -158,8 +160,9 @@ def render_report(
             "",
             "## ۶. جمع‌بندی نهایی و سناریو معاملاتی",
             "",
-            f"* تصمیم نهایی: {verdict['decision']}",
+            f"* سوگیری نهایی (Bias): {verdict['bias']}",
             f"* وضعیت معامله: {verdict['trade_status']}",
+            f"* اقدام فعلی (Action now): {verdict['action_now']}",
             f"* میزان اطمینان: {verdict['confidence']}",
             f"* دلیل اصلی: {verdict['main_reason']}",
             f"* سناریوی خرید: {verdict['bullish_scenario']}",
@@ -204,10 +207,13 @@ def render_telegram_report(
         f"منبع قیمت: {escape(price.get('source') or 'نامشخص')}",
         f"تطبیق قیمت: {escape(_price_validation_text(price))}",
         f"دامنه مشاهده‌شده: {escape(_session_range_text(price))}",
+        f"کندل بسته‌شده ۱H: {escape(_closed_candle_text(technicals.get('1h', {})))}",
+        f"کندل بسته‌شده ۴H: {escape(_closed_candle_text(technicals.get('4h', {})))}",
         "",
         "<b>خلاصه بازار</b>",
-        f"سوگیری: <b>{escape(verdict['decision'])}</b>",
+        f"سوگیری (Bias): <b>{escape(verdict['bias'])}</b>",
         f"وضعیت معامله: <b>{escape(verdict['trade_status'])}</b>",
+        f"اقدام فعلی: <b>{escape(verdict['action_now'])}</b>",
         f"تأیید شرط: {'بله' if verdict['trigger_met'] else 'خیر'}",
         f"شاهد شرط: {escape(verdict['trigger_evidence'])}",
         f"اطمینان: {escape(verdict['confidence'])}",
@@ -247,7 +253,7 @@ def _telegram_technical_line(label: str, item: dict[str, Any]) -> str:
     resistances = _format_levels((item.get("resistances") or [])[:2])
     return (
         f"{escape(label)}: روند {escape(str(trend))} | RSI {escape(str(rsi))} | "
-        f"حمایت {escape(supports)} | مقاومت {escape(resistances)}"
+        f"حمایت مشتق‌شده {escape(supports)} | مقاومت مشتق‌شده {escape(resistances)}"
     )
 
 
@@ -347,6 +353,7 @@ def _render_calendar(payload: dict[str, Any]) -> list[str]:
                 f"* عدد قبلی: {item.get('previous', 'نامشخص')}",
                 f"* اثر احتمالی روی طلا: {item.get('expected_impact', 'وابسته به نتیجه')}",
                 f"* سناریو: {item.get('scenario', 'وابسته به نتیجه')}",
+                f"* منشأ اعداد رویداد: {item.get('source', payload.get('source', 'نامشخص'))}",
                 "",
             ]
         )
@@ -365,6 +372,8 @@ def _render_prediction_markets(payload: dict[str, Any]) -> list[str]:
                 f"* احتمال فعلی: {item.get('probability', 'نامشخص')}",
                 f"* برداشت تحلیلی: {item.get('interpretation', 'نامشخص')}",
                 f"* اثر روی طلا: {item.get('sentiment', 'خنثی')}",
+                f"* منشأ احتمال/آستانه: {payload.get('source', 'Polymarket Gamma API')}؛ "
+                f"عنوان اصلی بازار: {item.get('title', 'نامشخص')}",
                 "",
             ]
         )
@@ -380,14 +389,14 @@ def _render_technicals(technicals: dict[str, dict[str, Any]]) -> list[str]:
             [
                 names[key],
                 "",
+                f"* آخرین کندل کاملاً بسته‌شده: {_closed_candle_text(item)}",
                 f"* روند: {item.get('trend', 'داده کافی برای تعیین دقیق این بخش در دسترس نیست.')}",
-                f"* حمایت‌ها: {_format_levels(item.get('supports', []))}",
-                f"* مقاومت‌ها: {_format_levels(item.get('resistances', []))}",
-                f"* منشأ سطوح: {item.get('level_origin', 'نامشخص')}",
-                f"* آخرین کندل بسته‌شده: {item.get('last_candle_at', 'نامشخص')} | "
-                f"Close: {item.get('last_close', 'نامشخص')}",
-                f"* RSI: {item.get('rsi', 'نامشخص')}",
-                f"* میانگین‌های متحرک: {item.get('moving_averages', 'نامشخص')}",
+                f"* حمایت‌های مشتق‌شده: {_level_details_text(item.get('support_details', []))}",
+                f"* مقاومت‌های مشتق‌شده: {_level_details_text(item.get('resistance_details', []))}",
+                f"* RSI: {item.get('rsi', 'نامشخص')} "
+                "(منشأ: Close کندل‌های کاملاً بسته‌شده همان تایم‌فریم)",
+                f"* میانگین‌های متحرک مشتق‌شده: "
+                f"{_moving_average_details_text(item.get('moving_average_details', []))}",
                 f"* توضیح: {item.get('explanation', 'داده کافی برای تعیین دقیق این بخش در دسترس نیست.')}",
                 "",
             ]
@@ -402,14 +411,7 @@ def _format_levels(levels: list[float]) -> str:
 
 
 def _decision_to_plain_fa(verdict: dict[str, Any]) -> str:
-    if not verdict.get("trigger_met"):
-        return "عدم ورود؛ شرط با کندل بسته‌شده تأیید نشده است"
-    decision = str(verdict.get("decision", ""))
-    if decision.startswith("LONG"):
-        return "خرید پس از تأیید کندل بسته‌شده"
-    if decision.startswith("SHORT"):
-        return "فروش پس از تأیید کندل بسته‌شده"
-    return "خرید یا فروش طبق سوگیری غالب بازار"
+    return str(verdict.get("action_now") or "عدم ورود")
 
 
 def _session_range_text(price: dict[str, Any]) -> str:
@@ -417,9 +419,22 @@ def _session_range_text(price: dict[str, Any]) -> str:
     high = price.get("session_high")
     if low is None or high is None:
         return "دامنه واقعی جلسه از منبع قیمت دریافت نشد"
+    session_open = price.get("session_open")
+    open_text = (
+        f"O={float(session_open):.2f} " if session_open is not None else "O=نامشخص "
+    )
+    last_text = (
+        f"Last={float(price['price']):.2f} "
+        if price.get("price") is not None
+        else "Last=نامشخص "
+    )
     return (
-        f"{float(low):.2f} تا {float(high):.2f} "
-        f"(منبع: {price.get('range_source', price.get('source', 'نامشخص'))})"
+        f"{open_text}H={float(high):.2f} L={float(low):.2f} {last_text}"
+        f"(دامنه L-H: {float(low):.2f} تا {float(high):.2f}؛ "
+        f"origin: observed session quote fields؛ "
+        f"منبع: {price.get('range_source', price.get('source', 'نامشخص'))}؛ "
+        f"timezone: {price.get('range_timezone', 'نامشخص')}؛ "
+        f"as-of: {price.get('fetched_at', 'نامشخص')})"
     )
 
 
@@ -437,9 +452,60 @@ def _level_audit_text(verdict: dict[str, Any]) -> str:
         else:
             status = "وضعیت لمس نامشخص"
         parts.append(
-            f"{float(item['level']):.2f} ({item['kind']} مشتق‌شده؛ {status})"
+            f"{float(item['level']):.2f} ({item['kind']} مشتق‌شده؛ "
+            f"origin: {_contributors_text(item.get('contributors', []))}؛ {status})"
         )
     return "؛ ".join(parts)
+
+
+def _closed_candle_text(item: dict[str, Any]) -> str:
+    candle = item.get("last_closed_candle") or {}
+    required = ("open", "high", "low", "close", "open_at", "close_at")
+    if not item.get("last_candle_closed") or any(
+        candle.get(field) is None for field in required
+    ):
+        return "داده OHLC کندل کاملاً بسته‌شده در دسترس نیست"
+    return (
+        f"{candle.get('open_at')} تا {candle.get('close_at')} | "
+        f"O={float(candle['open']):.2f} H={float(candle['high']):.2f} "
+        f"L={float(candle['low']):.2f} C={float(candle['close']):.2f} | "
+        f"origin: confirmed candle OHLC | source: {candle.get('source', 'نامشخص')}"
+    )
+
+
+def _level_details_text(details: list[dict[str, Any]]) -> str:
+    if not details:
+        return "داده کافی برای تعیین دقیق این بخش در دسترس نیست."
+    parts = []
+    for item in details:
+        parts.append(
+            f"{float(item['value']):.2f} "
+            f"(origin: historical pivot؛ timeframe: {item.get('timeframe', 'نامشخص')}؛ "
+            f"field: {item.get('observed_field', 'نامشخص')}؛ "
+            f"candle close: {item.get('pivot_candle_close_at', 'نامشخص')})"
+        )
+    return "؛ ".join(parts)
+
+
+def _moving_average_details_text(details: list[dict[str, Any]]) -> str:
+    if not details:
+        return "داده کافی برای تعیین دقیق این بخش در دسترس نیست."
+    return "؛ ".join(
+        f"{item.get('name', 'MA')}={float(item['value']):.2f} "
+        f"(origin: moving average of {item.get('period', 'نامشخص')} confirmed closes؛ "
+        f"timeframe: {item.get('timeframe', 'نامشخص')}؛ as-of: {item.get('as_of', 'نامشخص')})"
+        for item in details
+    )
+
+
+def _contributors_text(contributors: list[dict[str, Any]]) -> str:
+    if not contributors:
+        return "historical pivot؛ جزئیات کندل منشأ ثبت نشده"
+    return " + ".join(
+        f"historical pivot {item.get('timeframe', 'نامشخص')} "
+        f"at {item.get('pivot_candle_close_at', 'زمان نامشخص')}"
+        for item in contributors
+    )
 
 
 def _main_risk(calendar_payload: dict[str, Any], price: dict[str, Any]) -> str:

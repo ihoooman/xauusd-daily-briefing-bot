@@ -52,7 +52,7 @@ def analyze_timeframe(df: pd.DataFrame | None, payload: dict[str, Any]) -> dict[
     supports, resistances, support_details, resistance_details = _support_resistance(
         working, timeframe
     )
-    structure = _price_structure(working)
+    structure, structure_evidence = _price_structure(working, last_close_at)
     consistency_warning = _trend_structure_warning(trend, structure)
 
     ma_text = _moving_average_text(last)
@@ -74,7 +74,8 @@ def analyze_timeframe(df: pd.DataFrame | None, payload: dict[str, Any]) -> dict[
     }
 
     explanation = (
-        f"ساختار قیمت: {structure}. MACD: {macd_text}. "
+        f"ساختار قیمت: {structure}. شاهد ساختار: {structure_evidence}. "
+        f"MACD: {macd_text}. "
         f"آخرین بسته‌شدن تأییدشده: {last['close']:.2f} در {last_close_at}. "
         "حمایت و مقاومت‌ها از پیوت کندل‌های بسته‌شده استخراج شده‌اند و "
         "به‌معنای لمس‌شدن آن‌ها در جلسه جاری نیستند. "
@@ -95,6 +96,7 @@ def analyze_timeframe(df: pd.DataFrame | None, payload: dict[str, Any]) -> dict[
         "moving_average_details": ma_details,
         "macd": macd_text,
         "structure": structure,
+        "structure_evidence": structure_evidence,
         "explanation": explanation,
         "last_close": float(last["close"]),
         "last_candle_at": last_close_at,
@@ -203,7 +205,7 @@ def _pivot_level_details(
     return details
 
 
-def _price_structure(df: pd.DataFrame) -> str:
+def _price_structure(df: pd.DataFrame, last_close_at: Any) -> tuple[str, str]:
     recent = df.tail(30)
     first_high = recent["high"].head(10).max()
     last_high = recent["high"].tail(10).max()
@@ -213,16 +215,40 @@ def _price_structure(df: pd.DataFrame) -> str:
     range_before = recent["high"].head(10).max() - recent["low"].head(10).min()
 
     if last_high > first_high and last_low > first_low:
-        return "سقف‌ها و کف‌های بالاتر"
+        return (
+            "سقف‌ها و کف‌های بالاتر",
+            f"high مرجع {first_high:.2f} به {last_high:.2f} و low مرجع "
+            f"{first_low:.2f} به {last_low:.2f} رسیده است؛ origin: confirmed candle OHLC",
+        )
     if last_high < first_high and last_low < first_low:
-        return "سقف‌ها و کف‌های پایین‌تر"
+        return (
+            "سقف‌ها و کف‌های پایین‌تر",
+            f"high مرجع {first_high:.2f} به {last_high:.2f} و low مرجع "
+            f"{first_low:.2f} به {last_low:.2f} رسیده است؛ origin: confirmed candle OHLC",
+        )
     if range_before and range_now < range_before * 0.7:
-        return "فشردگی رنج"
+        return (
+            "فشردگی رنج",
+            f"دامنه ۱۰ کندل نخست {range_before:.2f} و دامنه ۱۰ کندل آخر "
+            f"{range_now:.2f} است؛ origin: confirmed candle OHLC",
+        )
     if recent["close"].iloc[-1] > first_high:
-        return "شکست رو به بالا"
+        return (
+            "Close بالاتر از سقف مرجع تاریخی",
+            f"Close={recent['close'].iloc[-1]:.2f} در {last_close_at} بالاتر از "
+            f"سقف مرجع={first_high:.2f} بسته شده است؛ origin: confirmed candle OHLC",
+        )
     if recent["close"].iloc[-1] < first_low:
-        return "شکست رو به پایین"
-    return "رنج یا پولبک نامشخص"
+        return (
+            "Close پایین‌تر از کف مرجع تاریخی",
+            f"Close={recent['close'].iloc[-1]:.2f} در {last_close_at} پایین‌تر از "
+            f"کف مرجع={first_low:.2f} بسته شده است؛ origin: confirmed candle OHLC",
+        )
+    return (
+        "رنج یا پولبک نامشخص",
+        f"Close={recent['close'].iloc[-1]:.2f} در {last_close_at} داخل بازه مرجع "
+        f"{first_low:.2f} تا {first_high:.2f} قرار دارد؛ origin: confirmed candle OHLC",
+    )
 
 
 def _moving_average_text(last: pd.Series) -> str:

@@ -48,6 +48,7 @@ class TechnicalEvidenceLedgerTests(unittest.TestCase):
             result["moving_average_details"][0]["origin"],
             "moving_average",
         )
+        self.assertIn("origin: confirmed candle OHLC", result["structure_evidence"])
         for level in result["support_details"] + result["resistance_details"]:
             self.assertEqual(level["origin"], "historical_pivot")
 

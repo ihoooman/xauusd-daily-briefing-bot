@@ -74,6 +74,43 @@ class DataQualityTests(unittest.TestCase):
         self.assertFalse(result["usable_for_trade"])
         self.assertLessEqual(result["score"], 49)
 
+    def test_timeframe_conflict_blocks_trade_and_caps_confidence(self) -> None:
+        now = datetime(2026, 7, 27, 18, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+        technicals = {
+            "1d": {
+                "available": True,
+                "last_candle_at": now,
+                "last_candle_closed": True,
+                "trend": "صعودی",
+            },
+            "4h": {
+                "available": True,
+                "last_candle_at": now,
+                "last_candle_closed": True,
+                "trend": "نزولی",
+            },
+            "1h": {
+                "available": True,
+                "last_candle_at": now,
+                "last_candle_closed": True,
+                "trend": "نزولی",
+            },
+        }
+        result = assess_data_quality(
+            now,
+            {"available": True, "validation": {"status": "confirmed"}},
+            {"items": []},
+            {"items": []},
+            {"items": []},
+            technicals,
+        )
+
+        self.assertFalse(result["usable_for_trade"])
+        self.assertEqual(result["confidence_cap"], "پایین")
+        self.assertTrue(
+            any("تناقض روند بین تایم‌فریم" in item for item in result["blockers"])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

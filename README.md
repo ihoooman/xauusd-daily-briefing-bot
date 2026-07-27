@@ -223,7 +223,32 @@ The final verdict combines:
 - Independent spot-price cross-checking
 - Data freshness, source diversity, and completeness scoring
 
-The bot outputs a direction, confidence level, main reason, invalidation level, bullish scenario, bearish scenario, and risk-management note.
+The bot outputs a directional bias, a separately validated trade status, the
+current action, confidence, evidence, invalidation criteria, scenarios, and a
+risk-management note.
+
+## Evidence and Trade Activation Protocol
+
+Every future report follows these rules:
+
+- `LONG` and `SHORT` are directional **biases**, not active trade signals.
+- `Trade Status` is `ACTIVE` only when the latest fully closed 1H candle closes
+  beyond the derived trigger and no data-quality blocker exists.
+- When the trigger is not confirmed, `Trade Status` is `INACTIVE` and
+  `Action now` is `No entry`.
+- Open 1H and 4H candles are discarded. Timestamps identify both candle open and
+  candle close, and evidence includes the complete OHLC record.
+- The observed session range and the latest closed 1H/4H candles are printed
+  before any derived technical levels.
+- Historical pivots, moving averages, and prediction-market thresholds retain
+  explicit origins. They are never described as an observed session touch,
+  high, low, or close.
+- Touch, break, and close claims require a fully closed candle, an exact
+  timestamp, and numerical OHLC evidence.
+- Source disagreement, timeframe conflict, or trend/structure contradiction
+  lowers confidence and forces `Trade Status` to `INACTIVE`.
+- A derived level outside the observed session range is explicitly marked as
+  not observed in that session.
 
 ## Security
 
