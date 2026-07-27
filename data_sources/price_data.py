@@ -79,7 +79,11 @@ class PriceDataProvider:
         url = "https://api.twelvedata.com/quote"
         response = self.session.get(
             url,
-            params={"symbol": "XAU/USD", "apikey": self.settings.price_api_key},
+            params={
+                "symbol": "XAU/USD",
+                "timezone": "UTC",
+                "apikey": self.settings.price_api_key,
+            },
             timeout=self.settings.http_timeout,
         )
         response.raise_for_status()
@@ -103,7 +107,8 @@ class PriceDataProvider:
             "session_open": session_open,
             "session_high": session_high,
             "session_low": session_low,
-            "range_source": "Twelve Data quote",
+            "range_source": "Twelve Data quote - observed session fields",
+            "range_timezone": "UTC",
             "raw": payload,
         }
 

@@ -88,6 +88,79 @@ class FinalVerdictTests(unittest.TestCase):
             all(item["inside_observed_session_range"] is False for item in support_audit)
         )
 
+    def test_trade_activates_only_on_confirmed_hourly_close(self) -> None:
+        candle = {
+            "open_at": "2026-07-27T13:00:00+00:00",
+            "close_at": "2026-07-27T14:00:00+00:00",
+            "open": 100.0,
+            "high": 103.0,
+            "low": 99.5,
+            "close": 102.5,
+            "source": "test-source",
+        }
+        technicals = {
+            "1d": {"trend": "صعودی", "supports": [98.0], "resistances": [102.0]},
+            "4h": {"trend": "صعودی", "supports": [99.0], "resistances": [102.0]},
+            "1h": {
+                "available": True,
+                "trend": "صعودی",
+                "supports": [99.5],
+                "resistances": [102.0],
+                "last_close": 102.5,
+                "last_candle_closed": True,
+                "last_candle_close_at": candle["close_at"],
+                "last_closed_candle": candle,
+            },
+        }
+        result = build_final_verdict(
+            {"bias": "صعودی"},
+            [],
+            [],
+            technicals,
+            price={"available": True, "price": 100.0},
+            data_quality={"score": 95, "usable_for_trade": True},
+        )
+
+        self.assertEqual(result["bias"], "LONG / خرید")
+        self.assertTrue(result["trigger_met"])
+        self.assertEqual(result["trade_status"], "ACTIVE / فعال")
+        self.assertIn("ورود مطابق سوگیری", result["action_now"])
+        self.assertIn("2026-07-27T14:00:00+00:00", result["trigger_evidence"])
+        self.assertIn("OHLC=100.00/103.00/99.50/102.50", result["trigger_evidence"])
+
+    def test_confirmed_close_stays_inactive_when_quality_has_conflict(self) -> None:
+        technicals = {
+            "1d": {"trend": "صعودی", "supports": [98.0], "resistances": [102.0]},
+            "4h": {"trend": "نزولی", "supports": [99.0], "resistances": [102.0]},
+            "1h": {
+                "available": True,
+                "trend": "صعودی",
+                "supports": [99.5],
+                "resistances": [102.0],
+                "last_close": 102.5,
+                "last_candle_closed": True,
+                "last_candle_close_at": "2026-07-27T14:00:00+00:00",
+            },
+        }
+        result = build_final_verdict(
+            {"bias": "صعودی"},
+            [],
+            [],
+            technicals,
+            price={"available": True, "price": 100.0},
+            data_quality={
+                "score": 49,
+                "usable_for_trade": False,
+                "confidence_cap": "پایین",
+                "blockers": ["تناقض روند بین تایم‌فریم‌های اصلی وجود دارد."],
+            },
+        )
+
+        self.assertTrue(result["trigger_met"])
+        self.assertEqual(result["trade_status"], "INACTIVE / غیرفعال")
+        self.assertEqual(result["action_now"], "عدم ورود")
+        self.assertEqual(result["confidence"], "پایین")
+
 
 if __name__ == "__main__":
     unittest.main()

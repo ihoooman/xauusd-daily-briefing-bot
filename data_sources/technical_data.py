@@ -112,7 +112,7 @@ class TechnicalDataProvider:
             {"open": "float64", "high": "float64", "low": "float64", "close": "float64"}
         )
         df = self._drop_incomplete_bars(df, interval)
-        df.attrs["source_timezone"] = "UTC"
+        df.attrs["source_timezone"] = self.settings.timezone
         return df
 
     def _fetch_twelve_time_series(self, interval: str) -> pd.DataFrame:
@@ -153,7 +153,8 @@ class TechnicalDataProvider:
         df = pd.DataFrame(rows).set_index("datetime").sort_index()
         df = self._drop_incomplete_bars(df, interval)
         meta = payload.get("meta") or {}
-        df.attrs["source_timezone"] = meta.get("exchange_timezone") or "UTC"
+        df.attrs["source_timezone"] = "UTC"
+        df.attrs["exchange_timezone"] = meta.get("exchange_timezone")
         return df
 
     @staticmethod
