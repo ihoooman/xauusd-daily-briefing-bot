@@ -165,7 +165,7 @@ The repository includes:
 .github/workflows/daily-report.yml
 ```
 
-The GitHub Actions workflow runs every day at **12:00 Tehran time** (`08:30 UTC`). You can also trigger it from the Actions tab with **Run workflow** whenever you want an additional fresh report.
+The GitHub Actions workflow runs every day at **12:00 Tehran time** (`08:30 UTC`). You can also trigger it from the Actions tab with **Run workflow** whenever you want an additional fresh report. Manual runs default to `send_telegram=false`; enable the input explicitly only when Telegram delivery is required. Scheduled runs preserve the configured Telegram behavior.
 
 Add these repository secrets:
 

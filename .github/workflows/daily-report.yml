@@ -5,6 +5,12 @@ on:
     # 12:00 Asia/Tehran (UTC+03:30)
     - cron: "30 8 * * *"
   workflow_dispatch:
+    inputs:
+      send_telegram:
+        description: "Send the report to Telegram"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,6 +40,7 @@ jobs:
           POLYMARKET_API_URL: ${{ vars.POLYMARKET_API_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SEND_TELEGRAM: ${{ github.event_name == 'schedule' || inputs.send_telegram }}
           TIMEZONE: Asia/Tehran
           REPORT_TIME: "12:00"
         run: python main.py

@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
-from main import render_report
+from main import _env_flag, render_report
 
 
 class ReportProtocolTests(unittest.TestCase):
+    def test_manual_delivery_flag_can_disable_telegram(self) -> None:
+        with patch.dict("os.environ", {"SEND_TELEGRAM": "false"}):
+            self.assertFalse(_env_flag("SEND_TELEGRAM", True))
+
     def test_observed_evidence_precedes_derived_levels(self) -> None:
         candle_1h = {
             "open_at": "2026-07-27T13:00:00+00:00",
