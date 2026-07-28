@@ -31,6 +31,27 @@ def assess_data_quality(
         warnings.append("قیمت زنده در دسترس نیست.")
         blockers.append("قیمت زنده معتبر برای تصمیم معاملاتی وجود ندارد.")
 
+    range_fields = (
+        "session_open",
+        "session_high",
+        "session_low",
+        "range_start",
+        "range_end",
+    )
+    if price.get("range_boundary_status") != "explicit" or any(
+        price.get(field) is None for field in range_fields
+    ):
+        warnings.append("دامنه جلسه با مرز زمانی صریح و قابل ممیزی در دسترس نیست.")
+        blockers.append("دامنه جلسه بدون مرز زمانی معتبر برای معامله قابل استفاده نیست.")
+    range_comparison = price.get("range_comparison") or {}
+    if range_comparison.get("status") == "mismatch":
+        warnings.append(
+            "دامنه روز UTC با فیلدهای Quote دارای مرزبندی نامعلوم ناسازگار است."
+        )
+        blockers.append("ناسازگاری دامنه جلسه میان داده‌های منبع وجود دارد.")
+    elif range_comparison.get("status") == "unavailable":
+        warnings.append("دامنه جلسه با فیلدهای Quote به‌طور کامل تطبیق داده نشد.")
+
     for timeframe, points in (("1d", 10), ("4h", 10), ("1h", 10)):
         item = technicals.get(timeframe, {})
         if not item.get("available"):

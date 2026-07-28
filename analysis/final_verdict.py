@@ -383,12 +383,17 @@ def _audit_levels_against_observed_range(
 ) -> list[dict[str, Any]]:
     session_low = (price or {}).get("session_low")
     session_high = (price or {}).get("session_high")
+    boundary_is_explicit = (price or {}).get("range_boundary_status") == "explicit"
     audited: list[dict[str, Any]] = []
     for kind, details in (("حمایت", supports), ("مقاومت", resistances)):
         for detail in details:
             level = float(detail["level"])
             observed = None
-            if session_low is not None and session_high is not None:
+            if (
+                boundary_is_explicit
+                and session_low is not None
+                and session_high is not None
+            ):
                 observed = float(session_low) <= level <= float(session_high)
             audited.append(
                 {

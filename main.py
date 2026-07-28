@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from analysis.final_verdict import build_final_verdict
 from analysis.data_quality import assess_data_quality
@@ -130,7 +132,9 @@ def render_report(
         f"ساعت تولید گزارش: {fa_datetime(report_time)}",
         f"قیمت فعلی: {price_text}",
         f"منبع قیمت: {price_source}",
-        f"زمان دریافت قیمت: {price.get('fetched_at') or 'نامشخص'}",
+        f"زمان دریافت قیمت به وقت تهران: "
+        f"{_tehran_datetime_text(price.get('retrieved_at'))}",
+        f"زمان اعلام‌شده توسط منبع: {price.get('fetched_at') or 'نامشخص'}",
         f"تطبیق قیمت: {_price_validation_text(price)}",
         f"دامنه مشاهده‌شده جلسه: {_session_range_text(price)}",
         f"آخرین کندل کاملاً بسته‌شده ۱H: {_closed_candle_text(technicals.get('1h', {}))}",
@@ -139,10 +143,10 @@ def render_report(
         "## ۱. خلاصه سریع بازار",
         "",
         f"* سوگیری کلی (Bias): {verdict['bias']}",
-        f"* وضعیت معامله: {verdict['trade_status']}",
+        f"* وضعیت معامله (Trade Status): {verdict['trade_status']}",
         f"* اقدام فعلی (Action now): {verdict['action_now']}",
-        f"* تأیید شرط: {'بله' if verdict['trigger_met'] else 'خیر'}",
-        f"* شاهد شرط: {verdict['trigger_evidence']}",
+        f"* Trigger met: {'YES / بله' if verdict['trigger_met'] else 'NO / خیر'}",
+        f"* شاهد شرط: {_trigger_evidence_text(verdict, technicals)}",
         f"* مهم‌ترین عامل اثرگذار: {verdict['main_reason']}",
         f"* ریسک اصلی امروز: {_main_risk(calendar_payload, price)}",
         f"* امتیاز کیفیت داده: {data_quality['score']} از ۱۰۰ ({data_quality['grade']})",
@@ -164,8 +168,9 @@ def render_report(
             "## ۶. جمع‌بندی نهایی و سناریو معاملاتی",
             "",
             f"* سوگیری نهایی (Bias): {verdict['bias']}",
-            f"* وضعیت معامله: {verdict['trade_status']}",
+            f"* وضعیت معامله (Trade Status): {verdict['trade_status']}",
             f"* اقدام فعلی (Action now): {verdict['action_now']}",
+            f"* Trigger met: {'YES / بله' if verdict['trigger_met'] else 'NO / خیر'}",
             f"* میزان اطمینان: {verdict['confidence']}",
             f"* دلیل اصلی: {verdict['main_reason']}",
             f"* سناریوی خرید: {verdict['bullish_scenario']}",
@@ -174,7 +179,7 @@ def render_report(
             f"* سطح ابطال تحلیل: {verdict['invalidation']}",
             f"* حمایت‌های تحلیلی مشتق‌شده: {_format_levels(verdict['supports'])}",
             f"* مقاومت‌های تحلیلی مشتق‌شده: {_format_levels(verdict['resistances'])}",
-            f"* ممیزی سطوح با دامنه واقعی جلسه: {_level_audit_text(verdict)}",
+            f"* ممیزی سطوح با دامنه مشاهده‌شده و مرز صریح: {_level_audit_text(verdict)}",
             "",
             "## ۷. نکته ریسک",
             "",
@@ -420,24 +425,44 @@ def _decision_to_plain_fa(verdict: dict[str, Any]) -> str:
 def _session_range_text(price: dict[str, Any]) -> str:
     low = price.get("session_low")
     high = price.get("session_high")
-    if low is None or high is None:
-        return "دامنه واقعی جلسه از منبع قیمت دریافت نشد"
+    if (
+        low is None
+        or high is None
+        or price.get("range_boundary_status") != "explicit"
+    ):
+        return (
+            "دامنه قابل ممیزی با مرز زمانی صریح دریافت نشد؛ فیلدهای Quote با "
+            "مرز نامعلوم جایگزین دامنه واقعی نشدند و در فعال‌سازی معامله "
+            "استفاده نمی‌شوند."
+        )
     session_open = price.get("session_open")
+    session_close = price.get("session_last_closed_1m")
     open_text = (
         f"O={float(session_open):.2f} " if session_open is not None else "O=نامشخص "
+    )
+    close_text = (
+        f"C1m={float(session_close):.2f} "
+        if session_close is not None
+        else "C1m=نامشخص "
     )
     last_text = (
         f"Last={float(price['price']):.2f} "
         if price.get("price") is not None
         else "Last=نامشخص "
     )
+    comparison = price.get("range_comparison") or {}
     return (
-        f"{open_text}H={float(high):.2f} L={float(low):.2f} {last_text}"
+        f"{open_text}H={float(high):.2f} L={float(low):.2f} {close_text}{last_text}"
         f"(دامنه L-H: {float(low):.2f} تا {float(high):.2f}؛ "
-        f"origin: observed session quote fields؛ "
+        f"مرز به وقت تهران: {_tehran_datetime_text(price.get('range_start'))} تا "
+        f"{_tehran_datetime_text(price.get('range_end'))}؛ "
+        f"تعریف مرز: {price.get('range_definition', 'نامشخص')}؛ "
+        f"origin: {price.get('range_origin', 'نامشخص')}؛ "
         f"منبع: {price.get('range_source', price.get('source', 'نامشخص'))}؛ "
         f"timezone: {price.get('range_timezone', 'نامشخص')}؛ "
-        f"as-of: {price.get('fetched_at', 'نامشخص')})"
+        f"تعداد کندل بسته‌شده: {price.get('range_bar_count', 'نامشخص')}؛ "
+        f"کنترل مرزبندی: {comparison.get('message', 'مقایسه در دسترس نیست')}؛ "
+        "استفاده برای فعال‌سازی معامله: خیر)"
     )
 
 
@@ -446,10 +471,13 @@ def _level_audit_text(verdict: dict[str, Any]) -> str:
     if not audited:
         return "دامنه جلسه یا سطوح قابل ممیزی در دسترس نیست."
     parts = []
-    for item in audited[:6]:
+    for item in audited:
         observed = item.get("inside_observed_session_range")
         if observed is True:
-            status = "داخل دامنه مشاهده‌شده"
+            status = (
+                "صرفاً از نظر عددی داخل دامنه مشاهده‌شده است؛ "
+                "این وضعیت شاهد لمس، High یا Low نیست"
+            )
         elif observed is False:
             status = "خارج از دامنه مشاهده‌شده و لمس آن تأیید نشده"
         else:
@@ -469,7 +497,8 @@ def _closed_candle_text(item: dict[str, Any]) -> str:
     ):
         return "داده OHLC کندل کاملاً بسته‌شده در دسترس نیست"
     return (
-        f"{candle.get('open_at')} تا {candle.get('close_at')} | "
+        f"{_tehran_datetime_text(candle.get('open_at'))} تا "
+        f"{_tehran_datetime_text(candle.get('close_at'))} | "
         f"O={float(candle['open']):.2f} H={float(candle['high']):.2f} "
         f"L={float(candle['low']):.2f} C={float(candle['close']):.2f} | "
         f"origin: confirmed candle OHLC | source: {candle.get('source', 'نامشخص')}"
@@ -485,7 +514,8 @@ def _level_details_text(details: list[dict[str, Any]]) -> str:
             f"{float(item['value']):.2f} "
             f"(origin: historical pivot؛ timeframe: {item.get('timeframe', 'نامشخص')}؛ "
             f"field: {item.get('observed_field', 'نامشخص')}؛ "
-            f"candle close: {item.get('pivot_candle_close_at', 'نامشخص')})"
+            f"candle close تهران: "
+            f"{_tehran_datetime_text(item.get('pivot_candle_close_at'))})"
         )
     return "؛ ".join(parts)
 
@@ -496,7 +526,8 @@ def _moving_average_details_text(details: list[dict[str, Any]]) -> str:
     return "؛ ".join(
         f"{item.get('name', 'MA')}={float(item['value']):.2f} "
         f"(origin: moving average of {item.get('period', 'نامشخص')} confirmed closes؛ "
-        f"timeframe: {item.get('timeframe', 'نامشخص')}؛ as-of: {item.get('as_of', 'نامشخص')})"
+        f"timeframe: {item.get('timeframe', 'نامشخص')}؛ as-of تهران: "
+        f"{_tehran_datetime_text(item.get('as_of'))})"
         for item in details
     )
 
@@ -506,9 +537,64 @@ def _contributors_text(contributors: list[dict[str, Any]]) -> str:
         return "historical pivot؛ جزئیات کندل منشأ ثبت نشده"
     return " + ".join(
         f"historical pivot {item.get('timeframe', 'نامشخص')} "
-        f"at {item.get('pivot_candle_close_at', 'زمان نامشخص')}"
+        f"at {_tehran_datetime_text(item.get('pivot_candle_close_at'))}"
         for item in contributors
     )
+
+
+def _trigger_evidence_text(
+    verdict: dict[str, Any],
+    technicals: dict[str, dict[str, Any]],
+) -> str:
+    hourly = technicals.get("1h", {})
+    candle = hourly.get("last_closed_candle") or {}
+    trigger_level = verdict.get("trigger_level")
+    close = candle.get("close", hourly.get("last_close"))
+    if (
+        trigger_level is None
+        or close is None
+        or not hourly.get("last_candle_closed")
+    ):
+        return "کندل بسته‌شده و سطح معتبر کافی برای تأیید شرط وجود ندارد."
+    trigger_level = float(trigger_level)
+    close = float(close)
+    decision = str(verdict.get("bias") or verdict.get("decision") or "")
+    relation = "بالاتر از" if close > trigger_level else "پایین‌تر یا مساوی"
+    if decision.startswith("SHORT"):
+        relation = "پایین‌تر از" if close < trigger_level else "بالاتر یا مساوی"
+    ohlc = ""
+    if all(candle.get(field) is not None for field in ("open", "high", "low", "close")):
+        ohlc = (
+            f"؛ OHLC={float(candle['open']):.2f}/"
+            f"{float(candle['high']):.2f}/{float(candle['low']):.2f}/"
+            f"{float(candle['close']):.2f}"
+        )
+    detail = verdict.get("trigger_detail") or {}
+    origin = _contributors_text(detail.get("contributors") or [])
+    return (
+        f"Close آخرین کندل کاملاً بسته‌شده ۱ساعته در "
+        f"{_tehran_datetime_text(candle.get('close_at'))} برابر {close:.2f} "
+        f"است{ohlc} و {relation} Trigger {trigger_level:.2f} قرار دارد. "
+        f"منشأ Trigger: {origin}."
+    )
+
+
+def _tehran_datetime_text(value: Any) -> str:
+    if value is None:
+        return "نامشخص"
+    if hasattr(value, "to_pydatetime"):
+        value = value.to_pydatetime()
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    if not isinstance(value, datetime):
+        return str(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    localized = value.astimezone(ZoneInfo(settings.timezone))
+    return f"{localized.strftime('%Y-%m-%d %H:%M:%S')} ({settings.timezone})"
 
 
 def _main_risk(calendar_payload: dict[str, Any], price: dict[str, Any]) -> str:
