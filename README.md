@@ -238,8 +238,14 @@ Every future report follows these rules:
   `Action now` is `No entry`.
 - Open 1H and 4H candles are discarded. Timestamps identify both candle open and
   candle close, and evidence includes the complete OHLC record.
-- The observed session range and the latest closed 1H/4H candles are printed
-  before any derived technical levels.
+- The observed session range is aggregated from fully closed 1-minute candles
+  using an explicit UTC calendar-day boundary. The report prints the equivalent
+  Tehran start/end times before any derived technical levels.
+- Quote endpoint range fields with an undeclared boundary are comparison
+  evidence only. They never replace the explicit range and never activate a
+  trade. A boundary/range mismatch is a data-quality blocker.
+- The latest closed 1H/4H candles are printed with complete OHLC evidence and
+  Tehran timestamps before any derived technical levels.
 - Historical pivots, moving averages, and prediction-market thresholds retain
   explicit origins. They are never described as an observed session touch,
   high, low, or close.
@@ -247,8 +253,9 @@ Every future report follows these rules:
   timestamp, and numerical OHLC evidence.
 - Source disagreement, timeframe conflict, or trend/structure contradiction
   lowers confidence and forces `Trade Status` to `INACTIVE`.
-- A derived level outside the observed session range is explicitly marked as
-  not observed in that session.
+- Being numerically inside the observed session range is not proof of a touch,
+  high, low, break, or close. A derived level outside the range is explicitly
+  marked as not observed in that session.
 
 ## Security
 

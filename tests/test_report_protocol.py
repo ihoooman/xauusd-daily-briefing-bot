@@ -63,6 +63,15 @@ class ReportProtocolTests(unittest.TestCase):
             "trade_status": "INACTIVE / غیرفعال",
             "action_now": "عدم ورود",
             "trigger_met": False,
+            "trigger_level": 4050.0,
+            "trigger_detail": {
+                "contributors": [
+                    {
+                        "timeframe": "1h",
+                        "pivot_candle_close_at": "2026-07-25T10:00:00+00:00",
+                    }
+                ]
+            },
             "trigger_evidence": "Close تأییدی شرط را محقق نکرده است.",
             "confidence": "پایین",
             "main_reason": "تناقض داده.",
@@ -96,6 +105,17 @@ class ReportProtocolTests(unittest.TestCase):
                 "session_open": 4100.0,
                 "session_high": 4116.19,
                 "session_low": 4066.50,
+                "session_last_closed_1m": 4068.0,
+                "range_start": "2026-07-27T00:00:00+00:00",
+                "range_end": "2026-07-27T14:30:00+00:00",
+                "range_boundary_status": "explicit",
+                "range_definition": "روز تقویمی UTC",
+                "range_origin": "confirmed 1min candle OHLC aggregation",
+                "range_bar_count": 870,
+                "range_comparison": {
+                    "status": "consistent",
+                    "message": "سازگار",
+                },
                 "range_source": "test-source",
                 "range_timezone": "UTC",
             },
@@ -120,8 +140,13 @@ class ReportProtocolTests(unittest.TestCase):
             report.index("حمایت‌های مشتق‌شده"),
         )
         self.assertIn("* سوگیری کلی (Bias): SHORT / فروش", report)
-        self.assertIn("* وضعیت معامله: INACTIVE / غیرفعال", report)
+        self.assertIn(
+            "* وضعیت معامله (Trade Status): INACTIVE / غیرفعال",
+            report,
+        )
         self.assertIn("* اقدام فعلی (Action now): عدم ورود", report)
+        self.assertIn("* Trigger met: NO / خیر", report)
+        self.assertIn("2026-07-27 17:30:00 (Asia/Tehran)", report)
         self.assertIn("4050.00", report)
         self.assertIn("خارج از دامنه مشاهده‌شده و لمس آن تأیید نشده", report)
 

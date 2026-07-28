@@ -74,6 +74,7 @@ class FinalVerdictTests(unittest.TestCase):
                 "price": 4066.86,
                 "session_low": 4066.50,
                 "session_high": 4116.19,
+                "range_boundary_status": "explicit",
             },
             data_quality={"score": 95, "usable_for_trade": True},
         )
