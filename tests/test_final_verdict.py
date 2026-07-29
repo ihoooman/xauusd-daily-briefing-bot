@@ -162,6 +162,43 @@ class FinalVerdictTests(unittest.TestCase):
         self.assertEqual(result["action_now"], "عدم ورود")
         self.assertEqual(result["confidence"], "پایین")
 
+    def test_fomc_no_chase_overrides_confirmed_trigger(self) -> None:
+        technicals = {
+            "1d": {"trend": "صعودی", "supports": [98.0], "resistances": [102.0]},
+            "4h": {"trend": "صعودی", "supports": [99.0], "resistances": [102.0]},
+            "1h": {
+                "available": True,
+                "trend": "صعودی",
+                "supports": [99.5],
+                "resistances": [102.0],
+                "last_close": 103.0,
+                "last_candle_closed": True,
+            },
+        }
+        restriction = (
+            "عدم ورود و ممنوعیت تعقیب قیمت تا حداقل 2026-07-29 23:30 تهران."
+        )
+
+        result = build_final_verdict(
+            {"bias": "صعودی"},
+            [],
+            [],
+            technicals,
+            price={"available": True, "price": 100.0},
+            data_quality={
+                "score": 49,
+                "usable_for_trade": False,
+                "confidence_cap": "پایین",
+                "blockers": ["ریسک فعال FOMC اجازه ورود نمی‌دهد."],
+                "no_chase": True,
+                "entry_restriction": restriction,
+            },
+        )
+
+        self.assertTrue(result["trigger_met"])
+        self.assertEqual(result["trade_status"], "INACTIVE / غیرفعال")
+        self.assertEqual(result["action_now"], restriction)
+
 
 if __name__ == "__main__":
     unittest.main()
