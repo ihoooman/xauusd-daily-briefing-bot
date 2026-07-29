@@ -253,6 +253,10 @@ Every future report follows these rules:
   timestamp, and numerical OHLC evidence.
 - Source disagreement, timeframe conflict, or trend/structure contradiction
   lowers confidence and forces `Trade Status` to `INACTIVE`.
+- Official Federal Reserve calendar events are converted from New York time to
+  Tehran time. A high-impact FOMC window forces `Trade Status` to `INACTIVE`
+  even if a technical trigger is met, and `Action now` prohibits chasing price
+  until a new fully closed 1H candle is available after the event window.
 - Being numerically inside the observed session range is not proof of a touch,
   high, low, break, or close. A derived level outside the range is explicitly
   marked as not observed in that session.

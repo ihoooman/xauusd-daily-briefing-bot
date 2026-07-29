@@ -154,6 +154,64 @@ class DataQualityTests(unittest.TestCase):
             any("ناسازگاری دامنه جلسه" in item for item in result["blockers"])
         )
 
+    def test_upcoming_fomc_blocks_entry_and_price_chasing(self) -> None:
+        now = datetime(2026, 7, 29, 13, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+        technicals = {
+            key: {
+                "available": True,
+                "last_candle_at": now,
+                "last_candle_closed": True,
+                "trend": "نزولی",
+            }
+            for key in ("1d", "4h", "1h")
+        }
+        calendar = {
+            "items": [
+                {
+                    "event_fa": "تصمیم نرخ بهره فدرال رزرو",
+                    "event_at": datetime(
+                        2026,
+                        7,
+                        29,
+                        21,
+                        30,
+                        tzinfo=ZoneInfo("Asia/Tehran"),
+                    ),
+                    "importance": "High",
+                    "risk_category": "fomc",
+                },
+                {
+                    "event_fa": "نشست خبری پس از تصمیم FOMC",
+                    "event_at": datetime(
+                        2026,
+                        7,
+                        29,
+                        22,
+                        0,
+                        tzinfo=ZoneInfo("Asia/Tehran"),
+                    ),
+                    "importance": "High",
+                    "risk_category": "fomc",
+                },
+            ]
+        }
+
+        result = assess_data_quality(
+            now,
+            self._confirmed_price(now),
+            {"items": []},
+            calendar,
+            {"items": []},
+            technicals,
+        )
+
+        self.assertFalse(result["usable_for_trade"])
+        self.assertTrue(result["no_chase"])
+        self.assertIn("2026-07-29 23:30", result["entry_restriction"])
+        self.assertTrue(
+            any("ریسک فعال FOMC" in item for item in result["blockers"])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

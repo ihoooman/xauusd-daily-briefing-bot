@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 
@@ -51,6 +51,11 @@ def assess_data_quality(
         blockers.append("ناسازگاری دامنه جلسه میان داده‌های منبع وجود دارد.")
     elif range_comparison.get("status") == "unavailable":
         warnings.append("دامنه جلسه با فیلدهای Quote به‌طور کامل تطبیق داده نشد.")
+
+    event_risk = _active_event_risk(report_time, calendar_payload.get("items") or [])
+    if event_risk:
+        warnings.append(str(event_risk["warning"]))
+        blockers.append(str(event_risk["blocker"]))
 
     for timeframe, points in (("1d", 10), ("4h", 10), ("1h", 10)):
         item = technicals.get(timeframe, {})
@@ -123,6 +128,11 @@ def assess_data_quality(
         "blockers": blockers,
         "usable_for_trade": not blockers,
         "confidence_cap": "پایین" if blockers else None,
+        "event_risk": event_risk,
+        "no_chase": bool(event_risk),
+        "entry_restriction": (
+            event_risk.get("restriction") if event_risk else "محدودیت خبری فعال نیست."
+        ),
         "summary": (
             "؛ ".join(
                 item.rstrip(".؟!") for item in (blockers + warnings)[:3]
@@ -130,6 +140,54 @@ def assess_data_quality(
             + "."
             if blockers or warnings
             else "منابع اصلی تازه و سازگار هستند."
+        ),
+    }
+
+
+def _active_event_risk(
+    report_time: datetime,
+    calendar_items: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    active: list[tuple[datetime, dict[str, Any]]] = []
+    for item in calendar_items:
+        event_at = item.get("event_at")
+        if not isinstance(event_at, datetime):
+            continue
+        if event_at.tzinfo is None:
+            event_at = event_at.replace(tzinfo=report_time.tzinfo)
+        event_at = event_at.astimezone(report_time.tzinfo)
+        importance = str(item.get("importance") or "").lower()
+        is_fomc = item.get("risk_category") == "fomc"
+        if not is_fomc and "high" not in importance:
+            continue
+        pre_event_hours = 12 if is_fomc else 2
+        seconds_to_event = (event_at - report_time).total_seconds()
+        seconds_since_event = -seconds_to_event
+        if seconds_to_event <= pre_event_hours * 3600 and seconds_since_event <= 90 * 60:
+            active.append((event_at, item))
+
+    if not active:
+        return None
+
+    risk_until = max(event_at for event_at, _ in active).replace(microsecond=0)
+    risk_until += timedelta(minutes=90)
+    event_names = "، ".join(
+        str(item.get("event_fa") or item.get("event") or "رویداد مهم")
+        for _, item in sorted(active, key=lambda pair: pair[0])
+    )
+    risk_until_text = risk_until.strftime("%Y-%m-%d %H:%M")
+    return {
+        "events": event_names,
+        "risk_until": risk_until,
+        "warning": (
+            f"پنجره ریسک خبری فعال است: {event_names}؛ تا {risk_until_text} "
+            "به وقت تهران تعقیب قیمت ممنوع است."
+        ),
+        "blocker": "ریسک فعال FOMC/رویداد پراثر اجازه فعال‌شدن معامله را نمی‌دهد.",
+        "restriction": (
+            f"عدم ورود و ممنوعیت تعقیب قیمت تا حداقل {risk_until_text} تهران؛ "
+            "پس از آن فقط بر اساس کندل یک‌ساعته کاملاً بسته‌شده جدید و بازآزمایی "
+            "سطح تصمیم‌گیری شود."
         ),
     }
 

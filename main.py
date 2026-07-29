@@ -145,6 +145,8 @@ def render_report(
         f"* سوگیری کلی (Bias): {verdict['bias']}",
         f"* وضعیت معامله (Trade Status): {verdict['trade_status']}",
         f"* اقدام فعلی (Action now): {verdict['action_now']}",
+        f"* محدودیت ورود خبری: "
+        f"{verdict.get('entry_restriction') or 'محدودیت خبری فعال نیست.'}",
         f"* Trigger met: {'YES / بله' if verdict['trigger_met'] else 'NO / خیر'}",
         f"* شاهد شرط: {_trigger_evidence_text(verdict, technicals)}",
         f"* مهم‌ترین عامل اثرگذار: {verdict['main_reason']}",
@@ -170,6 +172,8 @@ def render_report(
             f"* سوگیری نهایی (Bias): {verdict['bias']}",
             f"* وضعیت معامله (Trade Status): {verdict['trade_status']}",
             f"* اقدام فعلی (Action now): {verdict['action_now']}",
+            f"* محدودیت ورود خبری: "
+            f"{verdict.get('entry_restriction') or 'محدودیت خبری فعال نیست.'}",
             f"* Trigger met: {'YES / بله' if verdict['trigger_met'] else 'NO / خیر'}",
             f"* میزان اطمینان: {verdict['confidence']}",
             f"* دلیل اصلی: {verdict['main_reason']}",
@@ -357,6 +361,7 @@ def _render_calendar(payload: dict[str, Any]) -> list[str]:
                 f"* رویداد: {item.get('event_fa', item.get('event', 'نامشخص'))}",
                 f"* کشور: {item.get('country', 'نامشخص')}",
                 f"* ساعت به وقت تهران: {item.get('time_tehran', 'نامشخص')}",
+                f"* شاهد زمانی: {_event_time_evidence(item)}",
                 f"* پیش‌بینی: {item.get('forecast', 'نامشخص')}",
                 f"* عدد قبلی: {item.get('previous', 'نامشخص')}",
                 f"* اثر احتمالی روی طلا: {item.get('expected_impact', 'وابسته به نتیجه')}",
@@ -598,11 +603,29 @@ def _tehran_datetime_text(value: Any) -> str:
 
 
 def _main_risk(calendar_payload: dict[str, Any], price: dict[str, Any]) -> str:
+    for item in calendar_payload.get("items") or []:
+        if item.get("risk_category") == "fomc":
+            return (
+                f"{item.get('event_fa', 'رویداد FOMC')} در ساعت "
+                f"{item.get('time_tehran', 'نامشخص')} تهران؛ تعقیب حرکت اولیه "
+                "قیمت ممنوع است."
+            )
     if calendar_payload.get("items"):
         return "نوسان ناشی از داده‌های اقتصادی و واکنش دلار آمریکا"
     if not price.get("available"):
         return "نبود قیمت لحظه‌ای معتبر در زمان تولید گزارش"
     return "تغییر ناگهانی انتظارات نرخ بهره یا بازدهی اوراق آمریکا"
+
+
+def _event_time_evidence(item: dict[str, Any]) -> str:
+    source_time = item.get("source_time")
+    source_timezone = item.get("source_timezone")
+    if source_time and source_timezone:
+        return (
+            f"{source_time} در {source_timezone}؛ تبدیل‌شده به "
+            f"{item.get('time_tehran', 'نامشخص')} در Asia/Tehran"
+        )
+    return "زمان دقیق و منطقه زمانی مبدأ توسط منبع ارائه نشده است."
 
 
 def _env_flag(name: str, default: bool) -> bool:

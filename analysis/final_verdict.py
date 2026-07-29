@@ -67,11 +67,15 @@ def build_final_verdict(
     trigger_met = _trigger_confirmed(decision, trigger_level, technicals)
     quality_usable = bool((data_quality or {}).get("usable_for_trade", False))
     trade_status = "ACTIVE / فعال" if trigger_met and quality_usable else "INACTIVE / غیرفعال"
-    action_now = (
-        f"ورود مطابق سوگیری {decision}"
-        if trade_status.startswith("ACTIVE")
-        else "عدم ورود"
-    )
+    if (data_quality or {}).get("no_chase"):
+        action_now = str(
+            (data_quality or {}).get("entry_restriction")
+            or "عدم ورود؛ تعقیب قیمت در پنجره خبر ممنوع است."
+        )
+    elif trade_status.startswith("ACTIVE"):
+        action_now = f"ورود مطابق سوگیری {decision}"
+    else:
+        action_now = "عدم ورود"
     level_audit = _audit_levels_against_observed_range(
         price, support_details, resistance_details
     )
@@ -93,6 +97,7 @@ def build_final_verdict(
         "decision": decision,
         "trade_status": trade_status,
         "action_now": action_now,
+        "entry_restriction": (data_quality or {}).get("entry_restriction"),
         "trigger_level": trigger_level,
         "trigger_detail": trigger_detail,
         "trigger_met": trigger_met,
